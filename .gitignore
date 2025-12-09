@@ -1,0 +1,45 @@
+# Dependencies
+Backend/target/
+smart-exam-web/node_modules/
+smart-exam-web/dist/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Build files
+*.class
+*.jar
+*.war
+*.ear
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Test reports
+coverage/
+*.jacoco
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

@@ -1,0 +1,115 @@
+# 应用基本配置
+spring:
+  # 应用名称
+  application:
+    name: exam-system-backend
+  
+  # 数据源配置
+  datasource:
+    # MySQL 8.0 驱动类
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 数据库连接 URL（请根据实际环境替换）
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:exam_system}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+    # 数据库用户名（请根据实际环境替换）
+    username: ${DB_USER:root}
+    # 数据库密码（请根据实际环境替换）
+    password: ${DB_PASSWORD:root}
+  
+  # Redis 配置
+  data:
+    redis:
+      # Redis 主机地址（请根据实际环境替换）
+      host: ${REDIS_HOST:localhost}
+      # Redis 端口
+      port: ${REDIS_PORT:6379}
+      # Redis 密码（如无密码请留空）
+      password: ${REDIS_PASSWORD:}
+      # Redis 数据库索引
+      database: ${REDIS_DB:0}
+      # 连接超时时间
+      timeout: 3000ms
+      # Lettuce 连接池配置
+      lettuce:
+        pool:
+          # 最大活跃连接数
+          max-active: 8
+          # 最大空闲连接数
+          max-idle: 8
+          # 最小空闲连接数
+          min-idle: 0
+          # 连接最大等待时间
+          max-wait: -1ms
+  
+  # Web 配置
+  web:
+    # 允许的文件上传大小
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 100MB
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  # 扫描 Mapper XML 文件的路径
+  mapper-locations: classpath*:/mapper/**/*.xml
+  # 实体类包扫描路径
+  type-aliases-package: com.university.exam.entity
+  # 配置主键生成策略
+  global-config:
+    db-config:
+      id-type: AUTO
+      # 逻辑删除字段名
+      logic-delete-field: is_deleted
+      # 逻辑删除值
+      logic-delete-value: 1
+      # 逻辑未删除值
+      logic-not-delete-value: 0
+  # 配置 SQL 日志和驼峰命名
+  configuration:
+    # SQL 日志实现
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 开启驼峰命名映射
+    map-underscore-to-camel-case: true
+
+# 服务器配置
+server:
+  # 端口号
+  port: 8080
+  # 上下文路径
+  servlet:
+    context-path:
+  # Tomcat 配置
+  tomcat:
+    # 连接超时时间
+    connection-timeout: 30000ms
+
+# JWT 配置
+jwt:
+  # 密钥（请根据实际环境替换为复杂密钥）
+  secret: ${JWT_SECRET:exam_system_super_secret_key_2025_secure_jwt_key_1234567890}
+  # 过期时间（单位：秒）
+  expire: 7200
+  # 刷新时间（单位：秒）
+  refresh-expire: 86400
+  # 令牌前缀
+  prefix: Bearer
+  # 头信息字段名
+  header: Authorization
+
+# 日志配置
+logging:
+  # 日志级别配置
+  level:
+    # 根日志级别
+    root: INFO
+    # 项目包路径日志级别
+    com.university.exam: DEBUG
+    # Spring 框架日志级别
+    org.springframework: INFO
+    # MyBatis 日志级别
+    org.apache.ibatis: INFO
+    # MySQL 驱动日志级别
+    com.mysql: WARN
+  # 日志输出格式
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n'
+    file: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n'
