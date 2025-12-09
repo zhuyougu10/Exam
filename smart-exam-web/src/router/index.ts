@@ -23,6 +23,22 @@ export const constantRoutes: AppRouteRecordRaw[] = [
     }
   },
   {
+    path: '/profile',
+    component: () => import('@/layout/index.vue'),
+    hidden: true, // 不在侧边栏显示
+    children: [
+      {
+        path: '', // 空路径表示 /profile 直接渲染此组件
+        name: 'Profile',
+        component: () => import('@/views/profile/index.vue'),
+        meta: {
+          title: '个人中心',
+          icon: 'User'
+        }
+      }
+    ]
+  },
+  {
     path: '/404',
     name: '404',
     component: () => import('@/views/error/404.vue'),
