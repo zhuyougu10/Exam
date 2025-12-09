@@ -1,245 +1,324 @@
 <template>
-  <div class="p-6">
-    <el-card shadow="hover">
-      <!-- 页面标题和操作按钮 -->
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-bold">组织架构</h2>
-        <el-button type="success" @click="handleAddRootDept">新增根部门</el-button>
+  <div class="app-container p-6">
+    <el-card shadow="hover" class="rounded-lg">
+      <!-- 顶部操作栏 -->
+      <div class="mb-4 flex justify-between items-center">
+        <div class="flex gap-2">
+          <el-input
+              v-model="filterText"
+              placeholder="请输入部门名称过滤"
+              clearable
+              prefix-icon="Search"
+              style="width: 240px"
+              @input="handleFilter"
+          />
+          <el-button type="info" plain @click="toggleExpandAll">
+            <el-icon class="mr-1"><Sort /></el-icon> 展开/折叠
+          </el-button>
+        </div>
+        <el-button type="primary" @click="handleAdd()">
+          <el-icon class="mr-1"><Plus /></el-icon> 新增部门
+        </el-button>
       </div>
 
-      <!-- 部门树形结构 -->
-      <el-tree
-        :data="deptTree"
-        :props="deptTreeProps"
-        :expand-on-click-node="false"
-        :default-expand-all="true"
-        ref="treeRef"
-        class="w-full"
+      <!-- 部门树形表格 -->
+      <el-table
+          v-if="refreshTable"
+          v-loading="loading"
+          :data="deptList"
+          row-key="id"
+          :default-expand-all="isExpandAll"
+          :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
+          :header-cell-style="{ background: '#f8f9fa', color: '#606266', fontWeight: '600' }"
       >
-        <template #default="{ node, data }">
-          <div class="flex items-center justify-between w-full">
-            <span>{{ node.label }}</span>
-            <div class="flex gap-2">
-              <el-button type="primary" size="small" link @click.stop="handleAddChildDept(data)">
-                新增子部门
-              </el-button>
-              <el-button type="warning" size="small" link @click.stop="handleEditDept(data)">
-                编辑
-              </el-button>
-              <el-popconfirm
-                title="确定要删除该部门吗？"
-                @confirm="handleDeleteDept(data.id)"
-                :disabled="data.children && data.children.length > 0"
-              >
-                <template #reference>
-                  <el-button
-                    type="danger"
-                    size="small"
-                    link
-                    :disabled="data.children && data.children.length > 0"
-                  >
-                    删除
-                  </el-button>
-                </template>
-                <template #disabled>
-                  <el-button type="danger" size="small" link disabled>
-                    删除
-                  </el-button>
-                </template>
-              </el-popconfirm>
-            </div>
-          </div>
-        </template>
-      </el-tree>
+        <el-table-column prop="deptName" label="部门名称" min-width="260">
+          <template #default="scope">
+            <span class="font-medium text-gray-700">{{ scope.row.deptName }}</span>
+          </template>
+        </el-table-column>
 
-      <!-- 新增/编辑部门对话框 -->
-      <el-dialog
-        :title="dialogTitle"
-        v-model="dialogVisible"
-        width="500px"
-      >
-        <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-          <el-form-item label="部门名称" prop="deptName">
-            <el-input v-model="form.deptName" placeholder="请输入部门名称" />
-          </el-form-item>
-          <el-form-item label="上级部门" prop="parentId">
-            <el-select v-model="form.parentId" placeholder="请选择上级部门">
-              <el-option
-                v-for="dept in deptOptions"
-                :key="dept.id"
-                :label="dept.deptName"
-                :value="dept.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="排序" prop="sortOrder">
-            <el-input-number v-model="form.sortOrder" :min="0" :max="999" placeholder="请输入排序值" />
-          </el-form-item>
-          <el-form-item label="负责人">
-            <el-input v-model="form.leader" placeholder="请输入负责人姓名" />
-          </el-form-item>
-          <el-form-item label="类别">
-            <el-select v-model="form.category" placeholder="请选择部门类别">
-              <el-option label="学院" :value="1" />
-              <el-option label="系" :value="2" />
-              <el-option label="班级" :value="3" />
-            </el-select>
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="handleSubmit">确定</el-button>
-        </template>
-      </el-dialog>
+        <el-table-column prop="sortOrder" label="排序" width="100" align="center" />
+
+        <el-table-column prop="status" label="状态" width="100" align="center">
+          <template #default="scope">
+            <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" effect="light" round>
+              {{ scope.row.status === 1 ? '正常' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="leader" label="负责人" width="150" align="center">
+          <template #default="scope">
+            <div v-if="scope.row.leader" class="flex items-center justify-center text-gray-600">
+              <el-icon class="mr-1"><User /></el-icon>
+              {{ scope.row.leader }}
+            </div>
+            <span v-else class="text-gray-300">-</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="创建时间" align="center" prop="createTime" width="200">
+          <template #default="scope">
+            <span class="text-gray-500 text-sm">{{ formatTime(scope.row.createTime) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" align="center" width="220" fixed="right">
+          <template #default="scope">
+            <el-button link type="primary" icon="Edit" @click="handleEdit(scope.row)">修改</el-button>
+            <el-button link type="primary" icon="Plus" @click="handleAdd(scope.row)">新增</el-button>
+            <el-popconfirm title="确定要删除该部门吗?" @confirm="handleDelete(scope.row)">
+              <template #reference>
+                <el-button link type="danger" icon="Delete">删除</el-button>
+              </template>
+            </el-popconfirm>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-card>
+
+    <!-- 添加或修改部门对话框 -->
+    <el-dialog :title="title" v-model="open" width="600px" append-to-body destroy-on-close>
+      <el-form ref="deptFormRef" :model="form" :rules="rules" label-width="80px" class="mt-2">
+        <el-row :gutter="20">
+          <el-col :span="24" v-if="form.parentId !== 0">
+            <el-form-item label="上级部门" prop="parentId">
+              <el-tree-select
+                  v-model="form.parentId"
+                  :data="deptOptions"
+                  :props="{ value: 'id', label: 'deptName', children: 'children' }"
+                  value-key="id"
+                  placeholder="选择上级部门"
+                  check-strictly
+                  class="w-full"
+              />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="12">
+            <el-form-item label="部门名称" prop="deptName">
+              <el-input v-model="form.deptName" placeholder="请输入部门名称" />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="12">
+            <el-form-item label="显示排序" prop="sortOrder">
+              <el-input-number v-model="form.sortOrder" controls-position="right" :min="0" class="w-full" />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="12">
+            <el-form-item label="负责人" prop="leader">
+              <el-input v-model="form.leader" placeholder="请输入负责人" maxlength="20" />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="12">
+            <el-form-item label="联系电话" prop="phone">
+              <el-input v-model="form.phone" placeholder="请输入联系电话" maxlength="11" />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="12">
+            <el-form-item label="邮箱" prop="email">
+              <el-input v-model="form.email" placeholder="请输入邮箱" maxlength="50" />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="12">
+            <el-form-item label="部门状态">
+              <el-radio-group v-model="form.status">
+                <el-radio :value="1">正常</el-radio>
+                <el-radio :value="0">停用</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="cancel">取 消</el-button>
+          <el-button type="primary" @click="submitForm" :loading="submitLoading">确 定</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
-import request from '@/utils/request'
-import { ElMessage } from 'element-plus'
-import type { TreeProps } from 'element-plus'
+import { ref, reactive, onMounted, nextTick } from 'vue';
+import { ElMessage } from 'element-plus';
+import { Search, Plus, Sort, Edit, Delete, User } from '@element-plus/icons-vue';
+import request from '@/utils/request';
 
-// 数据定义
-const loading = ref(false)
-const dialogVisible = ref(false)
-const dialogTitle = ref('')
-const formRef = ref()
-const treeRef = ref()
+// 状态定义
+const loading = ref(true);
+const submitLoading = ref(false);
+const refreshTable = ref(true);
+const isExpandAll = ref(true);
+const open = ref(false);
+const title = ref('');
+const deptList = ref<any[]>([]);
+const deptOptions = ref<any[]>([]);
+const filterText = ref('');
+const rawDeptList = ref<any[]>([]); // 保存原始数据用于前端过滤
 
-const deptTree = ref<any[]>([])
-const deptList = ref<any[]>([])
+const deptFormRef = ref();
 
-// 部门树形结构配置
-const deptTreeProps: TreeProps = {
-  label: 'deptName',
-  children: 'children',
-  value: 'id'
-}
-
-// 表单数据
-const form = reactive({
+// 表单初始值
+const initialForm = {
   id: undefined,
-  deptName: '',
-  parentId: 0,
+  parentId: undefined,
+  deptName: undefined,
   sortOrder: 0,
-  leader: '',
-  category: 1
-})
+  leader: undefined,
+  phone: undefined,
+  email: undefined,
+  status: 1
+};
 
-// 表单验证规则
+const form = reactive({ ...initialForm });
+
+// 表单校验规则
 const rules = {
-  deptName: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
-  parentId: [{ required: true, message: '请选择上级部门', trigger: 'change' }],
-  sortOrder: [{ required: true, message: '请输入排序值', trigger: 'change' }]
-}
+  parentId: [{ required: true, message: "上级部门不能为空", trigger: "blur" }],
+  deptName: [{ required: true, message: "部门名称不能为空", trigger: "blur" }],
+  sortOrder: [{ required: true, message: "显示排序不能为空", trigger: "blur" }]
+};
 
-// 部门下拉选项（用于选择上级部门）
-const deptOptions = computed(() => {
-  // 过滤掉当前编辑的部门及其子部门，防止循环引用
-  const filteredDepts = deptList.value.filter(dept => {
-    if (form.id === undefined) return true
-    // 简单实现：如果是编辑模式，不显示当前部门作为上级部门
-    return dept.id !== form.id
-  })
-  return filteredDepts
-})
+// 格式化时间
+const formatTime = (time: string) => {
+  if (!time) return '-';
+  return time.replace('T', ' ');
+};
 
-// 初始化
-onMounted(() => {
-  fetchDeptTree()
-})
-
-// 获取部门树形结构
-const fetchDeptTree = async () => {
-  loading.value = true
+// 获取部门列表
+const getList = async () => {
+  loading.value = true;
   try {
-    const res: any = await request.get('/api/admin/dept/tree')
-    deptList.value = res
-    // 构建树形结构
-    deptTree.value = buildTree(res, 0)
-  } catch (error) {
-    ElMessage.error('获取部门列表失败')
+    const response = await request.get('/admin/dept/tree');
+    rawDeptList.value = response as any;
+    deptList.value = response as any;
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
-// 构建树形结构
-const buildTree = (list: any[], parentId: number): any[] => {
-  return list
-    .filter(item => item.parentId === parentId)
-    .map(item => ({
-      ...item,
-      children: buildTree(list, item.id)
-    }))
-}
-
-// 新增根部门
-const handleAddRootDept = () => {
-  dialogTitle.value = '新增根部门'
-  Object.assign(form, {
-    id: undefined,
-    deptName: '',
-    parentId: 0,
-    sortOrder: 0,
-    leader: '',
-    category: 1
-  })
-  dialogVisible.value = true
-}
-
-// 新增子部门
-const handleAddChildDept = (parentDept: any) => {
-  dialogTitle.value = '新增子部门'
-  Object.assign(form, {
-    id: undefined,
-    deptName: '',
-    parentId: parentDept.id,
-    sortOrder: 0,
-    leader: '',
-    category: parentDept.category + 1 || 1
-  })
-  dialogVisible.value = true
-}
-
-// 编辑部门
-const handleEditDept = (dept: any) => {
-  dialogTitle.value = '编辑部门'
-  Object.assign(form, dept)
-  dialogVisible.value = true
-}
-
-// 删除部门
-const handleDeleteDept = async (deptId: number) => {
-  try {
-    await request.delete(`/api/admin/dept/${deptId}`)
-    ElMessage.success('部门删除成功')
-    fetchDeptTree()
-  } catch (error) {
-    // error handled by interceptor
+// 前端过滤逻辑
+const handleFilter = (val: string) => {
+  if (!val) {
+    deptList.value = rawDeptList.value;
+    return;
   }
-}
-
-// 提交表单
-const handleSubmit = async () => {
-  if (!formRef.value) return
-  await formRef.value.validate(async (valid: boolean) => {
-    if (valid) {
-      try {
-        if (form.id) {
-          await request.put(`/api/admin/dept/${form.id}`, form)
-        } else {
-          await request.post('/api/admin/dept', form)
+  // 简单的递归过滤
+  const filterTree = (data: any[], text: string): any[] => {
+    return data.filter(item => {
+      const match = item.deptName.includes(text);
+      if (item.children && item.children.length > 0) {
+        const filteredChildren = filterTree(item.children, text);
+        if (filteredChildren.length > 0) {
+          item.children = filteredChildren;
+          return true;
         }
-        ElMessage.success(form.id ? '部门更新成功' : '部门创建成功')
-        dialogVisible.value = false
-        fetchDeptTree()
-      } catch (error) {
-        // error handled by interceptor
+      }
+      return match;
+    });
+  };
+  // 深拷贝一份数据进行过滤，避免修改原始数据
+  const copyData = JSON.parse(JSON.stringify(rawDeptList.value));
+  deptList.value = filterTree(copyData, val);
+};
+
+// 展开/折叠
+const toggleExpandAll = () => {
+  refreshTable.value = false;
+  isExpandAll.value = !isExpandAll.value;
+  nextTick(() => {
+    refreshTable.value = true;
+  });
+};
+
+// 取消按钮
+const cancel = () => {
+  open.value = false;
+  reset();
+};
+
+// 表单重置
+const reset = () => {
+  Object.assign(form, initialForm);
+};
+
+// 新增按钮操作
+const handleAdd = (row?: any) => {
+  reset();
+  if (row != undefined) {
+    form.parentId = row.id;
+  }
+  open.value = true;
+  title.value = "添加部门";
+  // 获取部门下拉树，直接复用列表数据
+  deptOptions.value = rawDeptList.value;
+};
+
+// 修改按钮操作
+const handleEdit = async (row: any) => {
+  reset();
+  // 填充表单数据
+  Object.assign(form, row);
+  open.value = true;
+  title.value = "修改部门";
+  // 排除自身作为父节点（简单处理：获取全量数据作为选项）
+  deptOptions.value = rawDeptList.value;
+};
+
+// 提交按钮
+const submitForm = async () => {
+  if (!deptFormRef.value) return;
+  await deptFormRef.value.validate(async (valid: boolean) => {
+    if (valid) {
+      submitLoading.value = true;
+      try {
+        if (form.id != undefined) {
+          // 修改
+          await request.put('/admin/dept', form);
+          ElMessage.success("修改成功");
+        } else {
+          // 新增
+          await request.post('/admin/dept', form);
+          ElMessage.success("新增成功");
+        }
+        open.value = false;
+        getList();
+      } catch (error: any) {
+        // request interceptor might handle error, but we can also log here
+        console.error(error);
+      } finally {
+        submitLoading.value = false;
       }
     }
-  })
-}
+  });
+};
+
+// 删除按钮操作
+const handleDelete = async (row: any) => {
+  try {
+    await request.delete(`/admin/dept/${row.id}`);
+    ElMessage.success("删除成功");
+    getList();
+  } catch (error) {
+    // error handled
+  }
+};
+
+onMounted(() => {
+  getList();
+});
 </script>
+
+<style scoped>
+.app-container {
+  /* 使得表格卡片充满屏幕高度的视觉感 */
+  min-height: calc(100vh - 84px);
+}
+</style>

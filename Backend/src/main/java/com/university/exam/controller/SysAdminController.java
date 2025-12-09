@@ -200,36 +200,18 @@ public class SysAdminController {
     // ===================== 组织架构 =====================
 
     /**
-     * 获取部门树形结构
+     * 获取部门组织架构树
+     * 前端调用路径: /api/admin/dept/tree
      *
-     * @return 部门树形结构
+     * @return 部门树形结构数据
      */
     @GetMapping("/dept/tree")
-    public Result<?> getDeptTree() {
-        // 1. 获取所有部门
-        List<Dept> deptList = deptService.lambdaQuery()
-                .orderByAsc(Dept::getParentId)
-                .orderByAsc(Dept::getSortOrder)
-                .list();
-
-        // 2. 构建树形结构
-        List<Dept> deptTree = buildDeptTree(deptList, 0L);
-
-        return Result.success(deptTree, "获取部门树形结构成功");
+    public Result<List<Dept>> getDeptTree() {
+        // 调用 DeptService 中已实现的递归构建树逻辑
+        List<Dept> tree = deptService.getDeptTree();
+        return Result.success(tree);
     }
 
-    /**
-     * 构建部门树形结构
-     *
-     * @param deptList  部门列表
-     * @param parentId 父部门ID
-     * @return 部门树形结构
-     */
-    private List<Dept> buildDeptTree(List<Dept> deptList, Long parentId) {
-        // 这里简化实现，实际项目中可以使用递归或迭代方式构建树形结构
-        // 由于前端页面已经实现了部门选择功能，这里直接返回所有部门列表
-        return deptList;
-    }
 
     /**
      * 创建部门
