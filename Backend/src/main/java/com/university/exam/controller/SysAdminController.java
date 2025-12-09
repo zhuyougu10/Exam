@@ -59,10 +59,10 @@ public class SysAdminController {
     @PostMapping("/user")
     public Result<?> createUser(@Valid @RequestBody User user) {
         // 1. 参数验证
-        if (StringUtils.isEmpty(user.getUsername())) {
+        if (!StringUtils.hasText(user.getUsername())) {
             throw new BizException(400, "用户名不能为空");
         }
-        if (StringUtils.isEmpty(user.getPassword())) {
+        if (!StringUtils.hasText(user.getPassword())) {
             throw new BizException(400, "密码不能为空");
         }
 
@@ -222,7 +222,7 @@ public class SysAdminController {
     @PostMapping("/dept")
     public Result<?> createDept(@Valid @RequestBody Dept dept) {
         // 1. 参数验证
-        if (StringUtils.isEmpty(dept.getDeptName())) {
+        if (!StringUtils.hasText(dept.getDeptName())) {
             throw new BizException(400, "部门名称不能为空");
         }
 
@@ -350,10 +350,10 @@ public class SysAdminController {
     @PostMapping("/course")
     public Result<?> createCourse(@Valid @RequestBody Course course) {
         // 1. 参数验证
-        if (StringUtils.isEmpty(course.getCourseName())) {
+        if (!StringUtils.hasText(course.getCourseName())) {
             throw new BizException(400, "课程名称不能为空");
         }
-        if (StringUtils.isEmpty(course.getCourseCode())) {
+        if (!StringUtils.hasText(course.getCourseCode())) {
             throw new BizException(400, "课程代码不能为空");
         }
 
@@ -376,6 +376,70 @@ public class SysAdminController {
         courseService.save(course);
 
         return Result.success("课程创建成功");
+    }
+
+    /**
+     * 更新课程
+     *
+     * @param id     课程ID
+     * @param course 课程信息
+     * @return 更新结果
+     */
+    @PutMapping("/course/{id}")
+    public Result<?> updateCourse(@PathVariable Long id, @RequestBody Course course) {
+        // 1. 检查课程是否存在
+        Course existingCourse = courseService.getById(id);
+        if (existingCourse == null) {
+            throw new BizException(404, "课程不存在");
+        }
+
+        // 2. 如果修改了课程代码，检查是否冲突
+        if (StringUtils.hasText(course.getCourseCode()) && !course.getCourseCode().equals(existingCourse.getCourseCode())) {
+            Course checkCourse = courseService.lambdaQuery()
+                    .eq(Course::getCourseCode, course.getCourseCode())
+                    .ne(Course::getId, id)
+                    .one();
+            if (checkCourse != null) {
+                throw new BizException(400, "课程代码已存在");
+            }
+        }
+
+        // 3. 设置更新信息
+        Long currentUserId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        course.setId(id);
+        course.setUpdateBy(currentUserId);
+        course.setUpdateTime(LocalDateTime.now());
+
+        // 4. 更新
+        courseService.updateById(course);
+
+        return Result.success("课程更新成功");
+    }
+
+    /**
+     * 删除课程
+     *
+     * @param id 课程ID
+     * @return 删除结果
+     */
+    @DeleteMapping("/course/{id}")
+    public Result<?> deleteCourse(@PathVariable Long id) {
+        // 1. 检查课程是否存在
+        Course course = courseService.getById(id);
+        if (course == null) {
+            throw new BizException(404, "课程不存在");
+        }
+
+        // 2. (可选) 检查是否有学生选课，如有则禁止删除
+        // long studentCount = courseUserService.lambdaQuery().eq(CourseUser::getCourseId, id).count();
+        // if (studentCount > 0) {
+        //     throw new BizException(400, "该课程已有学生选修，无法删除");
+        // }
+
+        // 3. 删除
+        courseService.removeById(id);
+
+        return Result.success("课程删除成功");
     }
 
     // ===================== 系统设置 =====================
@@ -403,8 +467,8 @@ public class SysAdminController {
             // 敏感配置项脱敏处理
             String configKey = config.getConfigKey();
             String configValue = config.getConfigValue();
-            if (configKey.toLowerCase().contains("password") || configKey.toLowerCase().contains("key") || 
-                configKey.toLowerCase().contains("secret") || configKey.toLowerCase().contains("token")) {
+            if (configKey.toLowerCase().contains("password") || configKey.toLowerCase().contains("key") ||
+                    configKey.toLowerCase().contains("secret") || configKey.toLowerCase().contains("token")) {
                 // 脱敏处理：只保留前3位和后3位，中间用*代替
                 if (configValue.length() > 6) {
                     configValue = configValue.substring(0, 3) + "******" + configValue.substring(configValue.length() - 3);
@@ -435,7 +499,7 @@ public class SysAdminController {
 
         // 2. 更新配置
         for (Config config : configList) {
-            if (config.getId() == null || StringUtils.isEmpty(config.getConfigKey())) {
+            if (config.getId() == null || !StringUtils.hasText(config.getConfigKey())) {
                 continue;
             }
 
