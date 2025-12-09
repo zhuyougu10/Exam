@@ -1,18 +1,19 @@
 <template>
   <el-container class="layout-container">
     <el-aside
-      :width="isCollapse ? '64px' : '220px'"
+      :width="isCollapse ? '64px' : '240px'"
       class="layout-sidebar"
-      :class="{ 'is-collapsed': isCollapse }"
     >
       <div class="sidebar-logo-container">
         <transition name="sidebarLogoFade">
           <router-link v-if="!isCollapse" to="/" class="sidebar-logo-link">
-            <el-icon class="logo-icon" :size="24"><Cpu /></el-icon>
-            <h1 class="sidebar-title">智能考试系统</h1>
+            <div class="logo-box">
+              <el-icon class="logo-icon"><Cpu /></el-icon>
+            </div>
+            <h1 class="sidebar-title">Smart Exam</h1>
           </router-link>
-          <router-link v-else to="/" class="sidebar-logo-link">
-            <el-icon class="logo-icon" :size="24"><Cpu /></el-icon>
+          <router-link v-else to="/" class="sidebar-logo-link collapsed">
+            <el-icon class="logo-icon"><Cpu /></el-icon>
           </router-link>
         </transition>
       </div>
@@ -23,14 +24,14 @@
           :collapse="isCollapse"
           :unique-opened="true"
           background-color="#001529"
-          text-color="#bfcbd9"
-          active-text-color="#409eff"
+          text-color="rgba(255, 255, 255, 0.7)"
+          active-text-color="#ffffff"
           class="sidebar-menu"
           :collapse-transition="false"
           router
         >
           <template v-if="hasRole('student')">
-            <div class="menu-label" v-if="!isCollapse">学生功能</div>
+            <div class="menu-label" v-if="!isCollapse">STUDENT</div>
             <el-menu-item index="/student/dashboard">
               <el-icon><DataAnalysis /></el-icon>
               <template #title>仪表盘</template>
@@ -46,7 +47,7 @@
           </template>
 
           <template v-if="hasRole('teacher')|| hasRole('admin')">
-            <div class="menu-label" v-if="!isCollapse">教师管理</div>
+            <div class="menu-label" v-if="!isCollapse">TEACHING</div>
             <el-menu-item index="/teacher/dashboard">
               <el-icon><DataAnalysis /></el-icon>
               <template #title>工作台</template>
@@ -72,7 +73,7 @@
           </template>
 
           <template v-if="hasRole('admin')">
-             <div class="menu-label" v-if="!isCollapse">系统设置</div>
+             <div class="menu-label" v-if="!isCollapse">SYSTEM</div>
             <el-menu-item index="/admin/user-manage">
               <el-icon><UserFilled /></el-icon>
               <template #title>用户管理</template>
@@ -115,7 +116,7 @@
         <div class="navbar-right">
           <el-tooltip content="消息通知" effect="dark" placement="bottom">
             <div class="right-menu-item">
-              <el-badge :value="3" class="badge-item">
+              <el-badge :value="3" class="badge-item" type="danger">
                 <el-icon :size="20"><Bell /></el-icon>
               </el-badge>
             </div>
@@ -129,10 +130,13 @@
 
           <el-dropdown class="avatar-container" trigger="click" @command="handleCommand">
             <div class="avatar-wrapper">
-              <el-avatar :size="32" :src="userAvatar" class="user-avatar">
+              <el-avatar :size="36" :src="userAvatar" class="user-avatar" :class="roleClass">
                 {{ userInitial }}
               </el-avatar>
-              <span class="user-name">{{ userStore.userInfo?.realName || 'User' }}</span>
+              <div class="user-info">
+                <span class="user-name">{{ userStore.userInfo?.realName || 'User' }}</span>
+                <span class="user-role">{{ roleName }}</span>
+              </div>
               <el-icon class="el-icon--right"><CaretBottom /></el-icon>
             </div>
             <template #dropdown>
@@ -144,7 +148,7 @@
                   <el-icon><Setting /></el-icon>系统设置
                 </el-dropdown-item>
                 <el-dropdown-item divided command="logout">
-                  <span style="display:block;">
+                  <span class="text-danger">
                     <el-icon><SwitchButton /></el-icon>退出登录
                   </span>
                 </el-dropdown-item>
@@ -170,9 +174,8 @@ import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import {
-  Menu as IconMenu,
   Fold, Expand, User, DataAnalysis, Document, Collection,
-  UserFilled, FolderOpened, EditPen, DocumentCopy, Reading, TrendCharts,
+  UserFilled, FolderOpened, DocumentCopy,
   Setting, Management, Notebook, Cpu, Bell, FullScreen, CaretBottom, SwitchButton
 } from '@element-plus/icons-vue'
 
@@ -189,7 +192,18 @@ const activeMenu = computed(() => route.path)
 const userAvatar = computed(() => userStore.userInfo?.avatar || '')
 const userInitial = computed(() => userStore.userInfo?.realName?.charAt(0).toUpperCase() || 'U')
 
-// 获取面包屑数据
+const roleName = computed(() => {
+  if (userStore.roles.includes('admin')) return '管理员'
+  if (userStore.roles.includes('teacher')) return '教师'
+  return '学生'
+})
+
+const roleClass = computed(() => {
+  if (userStore.roles.includes('admin')) return 'role-admin'
+  if (userStore.roles.includes('teacher')) return 'role-teacher'
+  return 'role-student'
+})
+
 const matchedRoutes = computed(() => {
   return route.matched.filter(item => item.meta && item.meta.title && item.path !== '/')
 })
@@ -209,86 +223,141 @@ const handleCommand = (command: string) => {
 </script>
 
 <style scoped lang="scss">
-/* 布局容器 */
 .layout-container {
   height: 100vh;
   width: 100%;
 }
 
-/* 侧边栏样式 */
+/* Sidebar Styling */
 .layout-sidebar {
   background-color: #001529;
   height: 100%;
   box-shadow: 2px 0 6px rgba(0, 21, 41, 0.35);
-  transition: width 0.28s;
+  transition: width 0.3s cubic-bezier(0.25, 0.8, 0.5, 1);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   z-index: 1001;
   
-  /* 去掉 Element Menu 默认的右边框 */
   :deep(.el-menu) {
     border-right: none;
   }
+  
+  /* 美化滚动条 */
+  :deep(.el-scrollbar__bar.is-vertical) {
+    width: 4px;
+    right: 2px;
+  }
+  
+  :deep(.el-scrollbar__thumb) {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
 }
 
-/* Logo 区域 */
 .sidebar-logo-container {
   position: relative;
   width: 100%;
-  height: 60px;
-  line-height: 60px;
-  background: #002140;
-  text-align: center;
+  height: 64px;
+  line-height: 64px;
+  background: #001529;
+  padding: 0 16px;
   overflow: hidden;
+  display: flex;
+  align-items: center;
 
   .sidebar-logo-link {
     height: 100%;
     width: 100%;
     display: flex;
     align-items: center;
-    justify-content: center;
     text-decoration: none;
+    
+    &.collapsed {
+      justify-content: center;
+    }
 
-    .logo-icon {
-      color: #409eff;
+    .logo-box {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      
+      .logo-icon {
+        font-size: 20px;
+        color: #fff;
+      }
+    }
+    
+    .sidebar-logo-link.collapsed .logo-icon {
+      font-size: 24px;
+      color: #1890ff;
       margin-right: 0;
     }
 
     .sidebar-title {
       display: inline-block;
-      margin: 0 0 0 12px;
+      margin: 0;
       color: #fff;
       font-weight: 600;
-      line-height: 50px;
-      font-size: 16px;
-      font-family: Avenir, Helvetica Neue, Arial, Helvetica, sans-serif;
+      font-size: 18px;
+      font-family: 'PingFang SC', 'Helvetica Neue', Helvetica, sans-serif;
       vertical-align: middle;
-      white-space: nowrap; // 防止文字换行
+      white-space: nowrap;
     }
   }
 }
 
-/* 菜单分组标签 */
 .menu-label {
-  padding: 12px 20px 8px;
+  padding: 16px 0 8px 24px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
-  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+  letter-spacing: 1px;
 }
 
-/* 顶部导航栏 */
+/* 侧边栏菜单选中样式 */
+.sidebar-menu {
+  :deep(.el-menu-item) {
+    border-left: 4px solid transparent;
+    
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.05) !important;
+    }
+    
+    &.is-active {
+      background-color: #1890ff !important;
+      border-left-color: #fff;
+      
+      .el-icon {
+        color: #fff;
+      }
+    }
+  }
+  
+  :deep(.el-sub-menu__title:hover) {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+  }
+}
+
+/* Header Styling */
 .navbar {
-  height: 60px;
+  height: 64px;
   overflow: hidden;
   position: relative;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.05);
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0;
   z-index: 1000;
+  position: sticky;
+  top: 0;
 }
 
 .navbar-left {
@@ -298,28 +367,28 @@ const handleCommand = (command: string) => {
 }
 
 .hamburger-container {
-  padding: 0 15px;
+  padding: 0 20px;
   height: 100%;
   display: flex;
   align-items: center;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s;
   
   &:hover {
     background: rgba(0, 0, 0, 0.025);
   }
+  
+  .is-active {
+    transform: rotate(180deg);
+  }
 }
 
-.breadcrumb-container {
-  margin-left: 8px;
-}
-
-/* 顶部右侧菜单 */
+/* Right Menu Styling */
 .navbar-right {
   display: flex;
   align-items: center;
   height: 100%;
-  padding-right: 20px;
+  padding-right: 24px;
   
   .right-menu-item {
     display: flex;
@@ -329,6 +398,7 @@ const handleCommand = (command: string) => {
     cursor: pointer;
     color: #5a5e66;
     transition: all 0.3s;
+    border-radius: 4px;
     
     &:hover {
       background: rgba(0, 0, 0, 0.025);
@@ -336,60 +406,78 @@ const handleCommand = (command: string) => {
   }
 }
 
-/* 头像区域 */
 .avatar-container {
-  margin-left: 10px;
+  margin-left: 12px;
   
   .avatar-wrapper {
     display: flex;
     align-items: center;
     cursor: pointer;
-    padding: 0 8px;
+    padding: 4px 8px;
+    border-radius: 20px;
+    transition: all 0.3s;
     
     &:hover {
       background: rgba(0, 0, 0, 0.025);
-      border-radius: 4px;
     }
     
-    .user-name {
+    .user-avatar {
+      font-weight: bold;
+      font-size: 16px;
+      
+      &.role-admin { background-color: #f56c6c; }
+      &.role-teacher { background-color: #e6a23c; }
+      &.role-student { background-color: #409eff; }
+    }
+    
+    .user-info {
+      display: flex;
+      flex-direction: column;
       margin: 0 8px;
-      font-size: 14px;
-      color: #606266;
-    }
-    
-    .el-icon--right {
-      color: #909399;
+      text-align: left;
+      
+      .user-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: #303133;
+        line-height: 1.2;
+      }
+      
+      .user-role {
+        font-size: 11px;
+        color: #909399;
+        margin-top: 2px;
+      }
     }
   }
 }
 
-/* 内容区域 */
+/* Main Content Styling */
 .app-main {
-  background-color: #f0f2f5; /* 浅灰色背景，突出卡片内容 */
-  padding: 20px;
+  background-color: #f5f7fa;
+  padding: 24px;
   width: 100%;
   position: relative;
-  overflow: hidden;
-  box-sizing: border-box;
+  overflow-x: hidden;
+  min-height: calc(100vh - 64px);
 }
 
-/* 动画效果：页面切换 */
+/* Transitions */
 .fade-transform-leave-active,
 .fade-transform-enter-active {
-  transition: all 0.4s;
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.5, 1);
 }
 
 .fade-transform-enter-from {
   opacity: 0;
-  transform: translateX(-30px);
+  transform: translateX(-20px);
 }
 
 .fade-transform-leave-to {
   opacity: 0;
-  transform: translateX(30px);
+  transform: translateX(20px);
 }
 
-/* 面包屑动画 */
 .breadcrumb-enter-active,
 .breadcrumb-leave-active {
   transition: all 0.5s;
@@ -403,5 +491,9 @@ const handleCommand = (command: string) => {
 
 .breadcrumb-leave-active {
   position: absolute;
+}
+
+.text-danger {
+  color: #f56c6c;
 }
 </style>
