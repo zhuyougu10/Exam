@@ -39,7 +39,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole(3)")
 public class SysAdminController {
 
     private final UserService userService;

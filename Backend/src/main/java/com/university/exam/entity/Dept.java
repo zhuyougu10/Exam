@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -97,4 +98,10 @@ public class Dept implements Serializable {
     @TableField("is_deleted")
     @TableLogic
     private Byte isDeleted;
+
+    /**
+     * 子部门列表
+     */
+    @TableField(exist = false)
+    private List<Dept> children;
 }

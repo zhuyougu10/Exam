@@ -1,114 +1,299 @@
 <template>
-  <div class="p-6">
-    <el-card shadow="hover">
-      <!-- 搜索栏 -->
-      <div class="flex justify-between items-center mb-4">
-        <div class="flex gap-4">
-          <el-input v-model="queryParams.username" placeholder="用户名搜索" class="w-48" clearable @clear="handleSearch" />
-          <el-select v-model="queryParams.deptId" placeholder="选择部门" class="w-48" clearable @clear="handleSearch">
-            <el-option v-for="item in deptOptions" :key="item.id" :label="item.deptName" :value="item.id" />
-          </el-select>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-        </div>
-        <el-button type="success" @click="handleAdd">新增用户</el-button>
-      </div>
-
-      <!-- 用户列表 -->
-      <el-table :data="userList" v-loading="loading" style="width: 100%">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="username" label="用户名" />
-        <el-table-column prop="realName" label="真实姓名" />
-        <el-table-column label="角色">
-          <template #default="{ row }">
-            <el-tag :type="getRoleTag(row.role)">{{ getRoleName(row.role) }}</el-tag>
+  <div class="app-container">
+    <el-row :gutter="20">
+      <!-- 左侧部门树结构 -->
+      <el-col :span="5" :xs="24">
+        <el-card class="box-card dept-tree-card" shadow="never">
+          <template #header>
+            <div class="card-header">
+              <span>组织架构</span>
+            </div>
           </template>
-        </el-table-column>
-        <el-table-column prop="deptId" label="部门">
-          <template #default="{ row }">
-            {{ getDeptName(row.deptId) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="phone" label="手机号" />
-        <el-table-column label="状态">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
-            <el-popconfirm title="确定要删除该用户吗？" @confirm="handleDelete(row.id)">
-              <template #reference>
-                <el-button type="danger" link>删除</el-button>
+          <div class="head-container">
+            <el-input
+              v-model="deptName"
+              placeholder="请输入部门名称"
+              clearable
+              prefix-icon="Search"
+              class="mb-4"
+            />
+          </div>
+          <div class="tree-container">
+            <el-tree
+              ref="deptTreeRef"
+              :data="deptOptions"
+              :props="{ children: 'children', label: 'deptName' }"
+              :expand-on-click-node="false"
+              :filter-node-method="filterNode"
+              node-key="id"
+              default-expand-all
+              highlight-current
+              @node-click="handleNodeClick"
+            >
+              <template #default="{ node, data }">
+                <span class="custom-tree-node">
+                  <el-icon class="mr-1"><component :is="data.children && data.children.length > 0 ? 'FolderOpened' : 'Document'" /></el-icon>
+                  <span>{{ node.label }}</span>
+                </span>
               </template>
-            </el-popconfirm>
-          </template>
-        </el-table-column>
-      </el-table>
+            </el-tree>
+          </div>
+        </el-card>
+      </el-col>
 
-      <!-- 分页 -->
-      <div class="flex justify-end mt-4">
-        <el-pagination
-            v-model:current-page="queryParams.page"
-            v-model:page-size="queryParams.size"
-            :total="total"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next, jumper"
-            @size-change="fetchData"
-            @current-change="fetchData"
-        />
-      </div>
-    </el-card>
+      <!-- 右侧用户数据列表 -->
+      <el-col :span="19" :xs="24">
+        <!-- 头部搜索与操作栏 -->
+        <el-card class="filter-container" shadow="never">
+          <div class="filter-wrapper">
+            <div class="filter-left">
+              <el-input
+                v-model="queryParams.username"
+                placeholder="输入用户名/姓名搜索"
+                class="filter-item w-240"
+                clearable
+                @clear="handleSearch"
+                @keyup.enter="handleSearch"
+              >
+                <template #prefix><el-icon><Search /></el-icon></template>
+              </el-input>
+              
+              <!-- 部门选择已移至左侧，此处可保留作为辅助或移除，此处保留并与左侧联动 -->
+              <el-select
+                v-model="queryParams.deptId"
+                placeholder="选择所属部门"
+                class="filter-item w-200"
+                clearable
+                @change="handleSearch"
+                @clear="handleSearch"
+              >
+                <template #prefix><el-icon><OfficeBuilding /></el-icon></template>
+                <el-tree-select
+                   v-if="false" 
+                   :data="deptOptions" 
+                   :props="{ label: 'deptName', children: 'children' }"
+                   check-strictly
+                />
+                <!-- 简单的扁平化展示，实际应使用 TreeSelect，这里简化为 Options 展示一级或扁平数据 -->
+                <el-option 
+                  v-for="item in flattenDepts(deptOptions)" 
+                  :key="item.id" 
+                  :label="item.deptName" 
+                  :value="item.id" 
+                />
+              </el-select>
+              
+              <el-button type="primary" @click="handleSearch">
+                <el-icon class="mr-1"><Search /></el-icon> 查询
+              </el-button>
+              <el-button @click="resetQuery">
+                <el-icon class="mr-1"><Refresh /></el-icon> 重置
+              </el-button>
+            </div>
+            
+            <div class="filter-right">
+              <el-button type="success" class="action-btn" @click="handleAdd">
+                <el-icon class="mr-1"><Plus /></el-icon> 新增用户
+              </el-button>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 数据表格区域 -->
+        <el-card class="table-container" shadow="never">
+          <el-table
+            v-loading="loading"
+            :data="userList"
+            style="width: 100%"
+            :header-cell-style="{ background: '#f8f9fa', color: '#606266', height: '50px' }"
+            stripe
+          >
+            <el-table-column prop="id" label="ID" width="80" align="center" sortable />
+            
+            <el-table-column label="用户信息" min-width="200">
+              <template #default="{ row }">
+                <div class="user-info-cell">
+                  <el-avatar :size="40" :src="row.avatar" :class="getRoleClass(row.role)">
+                    {{ row.realName?.charAt(0).toUpperCase() }}
+                  </el-avatar>
+                  <div class="text-info">
+                    <div class="realname">{{ row.realName }}</div>
+                    <div class="username">@{{ row.username }}</div>
+                  </div>
+                </div>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="角色" width="120" align="center">
+              <template #default="{ row }">
+                <el-tag :type="getRoleType(row.role)" effect="light" round size="small">
+                  {{ getRoleName(row.role) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="deptId" label="所属部门" min-width="150" show-overflow-tooltip>
+              <template #default="{ row }">
+                <div class="dept-cell" v-if="getDeptName(row.deptId) !== '-'">
+                  <el-icon class="dept-icon"><OfficeBuilding /></el-icon>
+                  <span>{{ getDeptName(row.deptId) }}</span>
+                </div>
+                <span v-else class="text-gray">-</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="phone" label="手机号" width="150" align="center" />
+
+            <el-table-column label="状态" width="100" align="center">
+              <template #default="{ row }">
+                <div class="status-cell">
+                  <span :class="['status-dot', row.status === 1 ? 'bg-success' : 'bg-danger']"></span>
+                  {{ row.status === 1 ? '正常' : '禁用' }}
+                </div>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="操作" width="180" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-tooltip content="编辑" placement="top" :enterable="false">
+                  <el-button type="primary" text circle @click="handleEdit(row)">
+                    <el-icon :size="16"><EditPen /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                
+                <el-tooltip content="重置密码" placement="top" :enterable="false">
+                  <el-button type="warning" text circle @click="handleResetPwd(row)">
+                    <el-icon :size="16"><Key /></el-icon>
+                  </el-button>
+                </el-tooltip>
+
+                <el-tooltip content="删除" placement="top" :enterable="false">
+                  <el-popconfirm
+                    title="确定要删除该用户吗？此操作不可恢复。"
+                    confirm-button-text="确定"
+                    cancel-button-text="取消"
+                    confirm-button-type="danger"
+                    width="220"
+                    @confirm="handleDelete(row.id)"
+                  >
+                    <template #reference>
+                      <el-button type="danger" text circle>
+                        <el-icon :size="16"><Delete /></el-icon>
+                      </el-button>
+                    </template>
+                  </el-popconfirm>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- 分页组件 -->
+          <div class="pagination-wrapper">
+            <el-pagination
+              v-model:current-page="queryParams.page"
+              v-model:page-size="queryParams.size"
+              :total="total"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next, jumper"
+              background
+              @size-change="fetchData"
+              @current-change="fetchData"
+            />
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
 
     <!-- 新增/编辑对话框 -->
-    <el-dialog :title="dialogTitle" v-model="dialogVisible" width="500px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" :disabled="!!form.id" />
+    <el-dialog
+      :title="dialogTitle"
+      v-model="dialogVisible"
+      width="580px"
+      class="user-dialog"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px" class="dialog-form">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="用户名" prop="username">
+              <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入用户名" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="真实姓名" prop="realName">
+              <el-input v-model="form.realName" placeholder="请输入真实姓名" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="登录密码" prop="password" v-if="!form.id">
+          <el-input
+            v-model="form.password"
+            type="password"
+            show-password
+            placeholder="默认密码：123456"
+          >
+            <template #prefix><el-icon><Lock /></el-icon></template>
+          </el-input>
         </el-form-item>
-        <el-form-item label="真实姓名" prop="realName">
-          <el-input v-model="form.realName" />
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="所属部门" prop="deptId">
+              <el-tree-select
+                v-model="form.deptId"
+                :data="deptOptions"
+                :props="{ label: 'deptName', children: 'children' }"
+                placeholder="请选择部门"
+                check-strictly
+                class="w-full"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="角色权限" prop="role">
+              <el-select v-model="form.role" class="w-full" placeholder="请选择角色">
+                <el-option label="学生" :value="1" />
+                <el-option label="教师" :value="2" />
+                <el-option label="管理员" :value="3" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="联系电话" prop="phone">
+          <el-input v-model="form.phone" placeholder="请输入手机号码" maxlength="11" />
         </el-form-item>
-        <el-form-item label="密码" prop="password" v-if="!form.id">
-          <el-input v-model="form.password" type="password" show-password placeholder="默认 123456" />
-        </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="form.role" class="w-full">
-            <el-option label="学生" :value="1" />
-            <el-option label="教师" :value="2" />
-            <el-option label="管理员" :value="3" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="部门" prop="deptId">
-          <el-select v-model="form.deptId" class="w-full">
-            <el-option v-for="item in deptOptions" :key="item.id" :label="item.deptName" :value="item.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" />
-        </el-form-item>
-        <el-form-item label="状态" prop="status">
+
+        <el-form-item label="账号状态" prop="status">
           <el-radio-group v-model="form.status">
-            <el-radio :value="1">启用</el-radio>
-            <el-radio :value="0">禁用</el-radio>
+            <el-radio :value="1" border>正常启用</el-radio>
+            <el-radio :value="0" border>禁用锁定</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <span class="dialog-footer">
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+            确认{{ form.id ? '修改' : '新增' }}
+          </el-button>
+        </span>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import request from '@/utils/request'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
+import { Search, Plus, Refresh, EditPen, Delete, Key, Lock, OfficeBuilding, FolderOpened, Document } from '@element-plus/icons-vue'
 
 // 数据定义
 const loading = ref(false)
+const submitLoading = ref(false)
 const userList = ref([])
 const total = ref(0)
 const deptOptions = ref<any[]>([])
@@ -116,11 +301,15 @@ const dialogVisible = ref(false)
 const dialogTitle = ref('')
 const formRef = ref()
 
+// 树相关
+const deptName = ref('')
+const deptTreeRef = ref<InstanceType<typeof ElTree>>()
+
 const queryParams = reactive({
   page: 1,
   size: 10,
   username: '',
-  deptId: undefined
+  deptId: undefined as number | undefined
 })
 
 const form = reactive({
@@ -140,11 +329,28 @@ const rules = {
   role: [{ required: true, message: '请选择角色', trigger: 'change' }]
 }
 
+// 监听部门搜索
+watch(deptName, (val) => {
+  deptTreeRef.value!.filter(val)
+})
+
 // 初始化
 onMounted(() => {
   fetchDepts()
   fetchData()
 })
+
+// 部门树过滤逻辑
+const filterNode = (value: string, data: any) => {
+  if (!value) return true
+  return data.deptName.includes(value)
+}
+
+// 部门树节点点击
+const handleNodeClick = (data: any) => {
+  queryParams.deptId = data.id
+  handleSearch()
+}
 
 // 获取部门列表
 const fetchDepts = async () => {
@@ -154,6 +360,18 @@ const fetchDepts = async () => {
   } catch (error) {
     console.error(error)
   }
+}
+
+// 扁平化部门数据用于Select Option (简单实现，实际建议使用 TreeSelect)
+const flattenDepts = (depts: any[]): any[] => {
+  let res: any[] = []
+  depts.forEach(dept => {
+    res.push(dept)
+    if (dept.children) {
+      res = res.concat(flattenDepts(dept.children))
+    }
+  })
+  return res
 }
 
 // 获取用户列表
@@ -171,6 +389,13 @@ const fetchData = async () => {
 const handleSearch = () => {
   queryParams.page = 1
   fetchData()
+}
+
+const resetQuery = () => {
+  queryParams.username = ''
+  queryParams.deptId = undefined
+  deptTreeRef.value?.setCurrentKey(null as any) // 清除树选中
+  handleSearch()
 }
 
 // 操作方法
@@ -196,6 +421,21 @@ const handleEdit = (row: any) => {
   dialogVisible.value = true
 }
 
+const handleResetPwd = (row: any) => {
+  ElMessageBox.confirm(
+    `确定重置用户 "${row.username}" 的密码为 123456 吗?`,
+    '重置密码',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  ).then(async () => {
+    // 假设后端有重置接口
+    ElMessage.info('功能开发中，请稍后')
+  })
+}
+
 const handleDelete = async (id: number) => {
   try {
     await request.delete(`/admin/user/${id}`)
@@ -210,6 +450,7 @@ const handleSubmit = async () => {
   if (!formRef.value) return
   await formRef.value.validate(async (valid: boolean) => {
     if (valid) {
+      submitLoading.value = true
       try {
         if (form.id) {
           await request.put(`/admin/user/${form.id}`, form)
@@ -220,7 +461,9 @@ const handleSubmit = async () => {
         dialogVisible.value = false
         fetchData()
       } catch (error) {
-        // error handled by interceptor
+        // error handled
+      } finally {
+        submitLoading.value = false
       }
     }
   })
@@ -232,13 +475,183 @@ const getRoleName = (role: number) => {
   return map[role] || '未知'
 }
 
-const getRoleTag = (role: number) => {
-  const map: Record<number, string> = { 1: '', 2: 'warning', 3: 'danger' }
-  return map[role] || 'info'
+const getRoleType = (role: number) => {
+  const map: Record<number, string> = { 1: 'info', 2: 'warning', 3: 'danger' }
+  return map[role] || ''
+}
+
+const getRoleClass = (role: number) => {
+  // 用于给头像加不同颜色的边框或背景
+  const map: Record<number, string> = { 1: 'role-student', 2: 'role-teacher', 3: 'role-admin' }
+  return map[role] || ''
 }
 
 const getDeptName = (deptId: number) => {
-  const dept = deptOptions.value.find(d => d.id === deptId)
-  return dept ? dept.deptName : '-'
+  // 由于现在部门是树形结构，查找名称需要遍历树
+  const findName = (depts: any[], id: number): string | null => {
+    for (const dept of depts) {
+      if (dept.id === id) return dept.deptName
+      if (dept.children) {
+        const name = findName(dept.children, id)
+        if (name) return name
+      }
+    }
+    return null
+  }
+  return findName(deptOptions.value, deptId) || '-'
 }
 </script>
+
+<style scoped lang="scss">
+.app-container {
+  padding: 20px;
+}
+
+/* 左侧部门树卡片 */
+.dept-tree-card {
+  height: 100%;
+  min-height: calc(100vh - 120px);
+  
+  :deep(.el-card__header) {
+    padding: 14px 16px;
+    border-bottom: 1px solid #f0f2f5;
+  }
+  
+  .card-header {
+    font-weight: 600;
+    color: #303133;
+  }
+  
+  :deep(.el-card__body) {
+    padding: 16px;
+  }
+  
+  .mb-4 {
+    margin-bottom: 16px;
+  }
+  
+  .custom-tree-node {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    
+    .el-icon {
+      color: #909399;
+    }
+  }
+}
+
+/* 筛选栏样式 */
+.filter-container {
+  margin-bottom: 20px;
+  border-radius: 8px;
+  
+  :deep(.el-card__body) {
+    padding: 16px 20px;
+  }
+}
+
+.filter-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  
+  .filter-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  
+  .w-240 { width: 240px; }
+  .w-200 { width: 200px; }
+}
+
+/* 表格容器样式 */
+.table-container {
+  border-radius: 8px;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 用户信息单元格 */
+.user-info-cell {
+  display: flex;
+  align-items: center;
+  
+  .text-info {
+    margin-left: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    line-height: 1.3;
+    
+    .realname {
+      font-weight: 600;
+      color: #303133;
+      font-size: 14px;
+    }
+    
+    .username {
+      font-size: 12px;
+      color: #909399;
+    }
+  }
+  
+  .el-avatar {
+    border: 2px solid transparent;
+    transition: all 0.3s;
+    background-color: #f0f2f5;
+    color: #909399;
+    font-weight: bold;
+    
+    &.role-admin { border-color: #f56c6c; color: #f56c6c; background-color: #fef0f0; }
+    &.role-teacher { border-color: #e6a23c; color: #e6a23c; background-color: #fdf6ec; }
+    &.role-student { border-color: #409eff; color: #409eff; background-color: #ecf5ff; }
+  }
+}
+
+/* 部门单元格 */
+.dept-cell {
+  display: flex;
+  align-items: center;
+  color: #606266;
+  
+  .dept-icon {
+    margin-right: 6px;
+    color: #909399;
+  }
+}
+
+/* 状态单元格 */
+.status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-right: 6px;
+    
+    &.bg-success { background-color: #67c23a; box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.2); }
+    &.bg-danger { background-color: #f56c6c; box-shadow: 0 0 0 2px rgba(245, 108, 108, 0.2); }
+  }
+}
+
+/* 分页 */
+.pagination-wrapper {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 辅助样式 */
+.mr-1 { margin-right: 4px; }
+.text-gray { color: #c0c4cc; }
+.w-full { width: 100%; }
+</style>
