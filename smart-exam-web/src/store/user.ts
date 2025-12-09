@@ -120,8 +120,9 @@ export const useUserStore = defineStore('user', () => {
     userInfo.value = null
     roles.value = []
     
-    // 跳转到登录页
-    router.push('/login')
+    // 直接使用 href 跳转，触发浏览器刷新
+    // 既解决了权限残留问题，又避免了 router.push + reload 导致的双重闪烁
+    window.location.href = '/login'
   }
 
   /**

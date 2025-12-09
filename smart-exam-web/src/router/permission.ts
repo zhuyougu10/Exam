@@ -28,15 +28,24 @@ router.beforeEach(async (to, _from, next) => {
     }
     
     // 核心修复逻辑：
-    // 不仅检查 roles 是否为空，还要检查动态路由是否已挂载。
-    // 我们检查 'student', 'teacher', 'admin' 其中一个路由是否存在。
-    const hasDynamicRoutes = router.hasRoute('student') || router.hasRoute('teacher') || router.hasRoute('admin')
+    // 判断当前用户对应的路由是否已经加载
+    // 避免“管理员登录后(加载了admin路由)，注销换学生账号登录，判断admin路由存在导致不加载student路由”的Bug
+    let hasRouteForCurrentRole = false
+    const roles = userStore.roles
+    
+    if (roles.includes('admin')) {
+      hasRouteForCurrentRole = router.hasRoute('admin')
+    } else if (roles.includes('teacher')) {
+      hasRouteForCurrentRole = router.hasRoute('teacher')
+    } else if (roles.includes('student')) {
+      hasRouteForCurrentRole = router.hasRoute('student')
+    }
 
-    // 如果角色为空 OR 动态路由未加载
-    if (userStore.roles.length === 0 || !hasDynamicRoutes) {
+    // 如果角色为空 (刷新页面情况) OR 对应角色的路由未加载 (切换账号情况)
+    if (roles.length === 0 || !hasRouteForCurrentRole) {
       try {
         // 如果没有角色信息（比如刷新页面时），重新获取
-        if (userStore.roles.length === 0) {
+        if (roles.length === 0) {
           await userStore.getUserInfo()
         }
         
@@ -61,7 +70,7 @@ router.beforeEach(async (to, _from, next) => {
       }
     }
     
-    // 已获取角色信息，直接跳转
+    // 已获取角色信息且路由已加载，直接跳转
     next()
   } else {
     // 未登录用户，检查是否在白名单中
