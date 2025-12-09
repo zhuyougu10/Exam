@@ -1,27 +1,31 @@
 <template>
-  <div class="app-container p-6">
-    <el-card shadow="hover" class="rounded-lg">
-      <!-- 顶部操作栏 -->
-      <div class="mb-4 flex justify-between items-center">
-        <div class="flex gap-2">
+  <div class="app-container">
+    <el-card shadow="never" class="filter-card">
+      <div class="header-box">
+        <!-- 搜索区 -->
+        <div class="header-left">
           <el-input
               v-model="filterText"
               placeholder="请输入部门名称过滤"
               clearable
               prefix-icon="Search"
-              style="width: 240px"
+              class="filter-input"
               @input="handleFilter"
           />
-          <el-button type="info" plain @click="toggleExpandAll">
-            <el-icon class="mr-1"><Sort /></el-icon> 展开/折叠
+          <el-button type="info" plain icon="Sort" @click="toggleExpandAll">
+            {{ isExpandAll ? '全部折叠' : '全部展开' }}
           </el-button>
         </div>
-        <el-button type="primary" @click="handleAdd()">
-          <el-icon class="mr-1"><Plus /></el-icon> 新增部门
-        </el-button>
-      </div>
 
-      <!-- 部门树形表格 -->
+        <!-- 操作区 -->
+        <div class="header-right">
+          <el-button type="primary" icon="Plus" @click="handleAdd()">新增部门</el-button>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 部门树形表格 -->
+    <el-card shadow="never" class="table-card">
       <el-table
           v-if="refreshTable"
           v-loading="loading"
@@ -29,19 +33,29 @@
           row-key="id"
           :default-expand-all="isExpandAll"
           :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
-          :header-cell-style="{ background: '#f8f9fa', color: '#606266', fontWeight: '600' }"
+          :header-cell-style="{ background: '#f8f9fa', color: '#333', fontWeight: 'bold' }"
+          border
       >
         <el-table-column prop="deptName" label="部门名称" min-width="260">
           <template #default="scope">
-            <span class="font-medium text-gray-700">{{ scope.row.deptName }}</span>
+            <div class="dept-name-cell">
+              <el-icon :class="['folder-icon', scope.row.children?.length ? 'has-child' : '']">
+                <component :is="scope.row.children?.length ? 'FolderOpened' : 'Document'" />
+              </el-icon>
+              <span>{{ scope.row.deptName }}</span>
+            </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="sortOrder" label="排序" width="100" align="center" />
+        <el-table-column prop="sortOrder" label="排序" width="80" align="center">
+          <template #default="scope">
+            <el-tag type="info" size="small">{{ scope.row.sortOrder }}</el-tag>
+          </template>
+        </el-table-column>
 
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="scope">
-            <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" effect="light" round>
+            <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" effect="plain">
               {{ scope.row.status === 1 ? '正常' : '停用' }}
             </el-tag>
           </template>
@@ -49,25 +63,25 @@
 
         <el-table-column prop="leader" label="负责人" width="150" align="center">
           <template #default="scope">
-            <div v-if="scope.row.leader" class="flex items-center justify-center text-gray-600">
-              <el-icon class="mr-1"><User /></el-icon>
-              {{ scope.row.leader }}
+            <div v-if="scope.row.leader" class="leader-cell">
+              <el-avatar :size="24" class="leader-avatar">{{ scope.row.leader.charAt(0) }}</el-avatar>
+              <span>{{ scope.row.leader }}</span>
             </div>
-            <span v-else class="text-gray-300">-</span>
+            <span v-else>-</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="创建时间" align="center" prop="createTime" width="200">
+        <el-table-column label="创建时间" align="center" prop="createTime" width="180">
           <template #default="scope">
-            <span class="text-gray-500 text-sm">{{ formatTime(scope.row.createTime) }}</span>
+            <span class="time-text">{{ formatTime(scope.row.createTime) }}</span>
           </template>
         </el-table-column>
 
         <el-table-column label="操作" align="center" width="220" fixed="right">
           <template #default="scope">
             <el-button link type="primary" icon="Edit" @click="handleEdit(scope.row)">修改</el-button>
-            <el-button link type="primary" icon="Plus" @click="handleAdd(scope.row)">新增</el-button>
-            <el-popconfirm title="确定要删除该部门吗?" @confirm="handleDelete(scope.row)">
+            <el-button link type="success" icon="Plus" @click="handleAdd(scope.row)">新增</el-button>
+            <el-popconfirm title="确定要删除该部门吗?" width="200" @confirm="handleDelete(scope.row)">
               <template #reference>
                 <el-button link type="danger" icon="Delete">删除</el-button>
               </template>
@@ -78,9 +92,16 @@
     </el-card>
 
     <!-- 添加或修改部门对话框 -->
-    <el-dialog :title="title" v-model="open" width="600px" append-to-body destroy-on-close>
-      <el-form ref="deptFormRef" :model="form" :rules="rules" label-width="80px" class="mt-2">
-        <el-row :gutter="20">
+    <el-dialog
+        :title="title"
+        v-model="open"
+        width="600px"
+        class="custom-dialog"
+        align-center
+        destroy-on-close
+    >
+      <el-form ref="deptFormRef" :model="form" :rules="rules" label-width="90px" class="dialog-form">
+        <el-row :gutter="24">
           <el-col :span="24" v-if="form.parentId !== 0">
             <el-form-item label="上级部门" prop="parentId">
               <el-tree-select
@@ -88,7 +109,7 @@
                   :data="deptOptions"
                   :props="{ value: 'id', label: 'deptName', children: 'children' }"
                   value-key="id"
-                  placeholder="选择上级部门"
+                  placeholder="请选择上级部门"
                   check-strictly
                   class="w-full"
               />
@@ -109,27 +130,27 @@
 
           <el-col :span="12">
             <el-form-item label="负责人" prop="leader">
-              <el-input v-model="form.leader" placeholder="请输入负责人" maxlength="20" />
+              <el-input v-model="form.leader" placeholder="请输入负责人" prefix-icon="User" />
             </el-form-item>
           </el-col>
 
           <el-col :span="12">
             <el-form-item label="联系电话" prop="phone">
-              <el-input v-model="form.phone" placeholder="请输入联系电话" maxlength="11" />
+              <el-input v-model="form.phone" placeholder="请输入联系电话" prefix-icon="Phone" maxlength="11" />
             </el-form-item>
           </el-col>
 
           <el-col :span="12">
             <el-form-item label="邮箱" prop="email">
-              <el-input v-model="form.email" placeholder="请输入邮箱" maxlength="50" />
+              <el-input v-model="form.email" placeholder="请输入邮箱" prefix-icon="Message" maxlength="50" />
             </el-form-item>
           </el-col>
 
           <el-col :span="12">
             <el-form-item label="部门状态">
-              <el-radio-group v-model="form.status">
-                <el-radio :value="1">正常</el-radio>
-                <el-radio :value="0">停用</el-radio>
+              <el-radio-group v-model="form.status" class="w-full">
+                <el-radio-button :value="1">正常</el-radio-button>
+                <el-radio-button :value="0">停用</el-radio-button>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -148,7 +169,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Search, Plus, Sort, Edit, Delete, User } from '@element-plus/icons-vue';
+import { Search, Plus, Sort, Edit, Delete, User, FolderOpened, Document, Phone, Message } from '@element-plus/icons-vue';
 import request from '@/utils/request';
 
 // 状态定义
@@ -161,11 +182,10 @@ const title = ref('');
 const deptList = ref<any[]>([]);
 const deptOptions = ref<any[]>([]);
 const filterText = ref('');
-const rawDeptList = ref<any[]>([]); // 保存原始数据用于前端过滤
+const rawDeptList = ref<any[]>([]);
 
 const deptFormRef = ref();
 
-// 表单初始值
 const initialForm = {
   id: undefined,
   parentId: undefined,
@@ -179,20 +199,18 @@ const initialForm = {
 
 const form = reactive({ ...initialForm });
 
-// 表单校验规则
 const rules = {
-  parentId: [{ required: true, message: "上级部门不能为空", trigger: "blur" }],
+  parentId: [{ required: true, message: "上级部门不能为空", trigger: "change" }],
   deptName: [{ required: true, message: "部门名称不能为空", trigger: "blur" }],
-  sortOrder: [{ required: true, message: "显示排序不能为空", trigger: "blur" }]
+  sortOrder: [{ required: true, message: "显示排序不能为空", trigger: "blur" }],
+  email: [{ type: 'email', message: "请输入正确的邮箱地址", trigger: ["blur", "change"] }]
 };
 
-// 格式化时间
 const formatTime = (time: string) => {
   if (!time) return '-';
-  return time.replace('T', ' ');
+  return time.replace('T', ' ').substring(0, 16);
 };
 
-// 获取部门列表
 const getList = async () => {
   loading.value = true;
   try {
@@ -204,13 +222,11 @@ const getList = async () => {
   }
 };
 
-// 前端过滤逻辑
 const handleFilter = (val: string) => {
   if (!val) {
     deptList.value = rawDeptList.value;
     return;
   }
-  // 简单的递归过滤
   const filterTree = (data: any[], text: string): any[] => {
     return data.filter(item => {
       const match = item.deptName.includes(text);
@@ -224,12 +240,10 @@ const handleFilter = (val: string) => {
       return match;
     });
   };
-  // 深拷贝一份数据进行过滤，避免修改原始数据
   const copyData = JSON.parse(JSON.stringify(rawDeptList.value));
   deptList.value = filterTree(copyData, val);
 };
 
-// 展开/折叠
 const toggleExpandAll = () => {
   refreshTable.value = false;
   isExpandAll.value = !isExpandAll.value;
@@ -238,18 +252,15 @@ const toggleExpandAll = () => {
   });
 };
 
-// 取消按钮
 const cancel = () => {
   open.value = false;
   reset();
 };
 
-// 表单重置
 const reset = () => {
   Object.assign(form, initialForm);
 };
 
-// 新增按钮操作
 const handleAdd = (row?: any) => {
   reset();
   if (row != undefined) {
@@ -257,22 +268,17 @@ const handleAdd = (row?: any) => {
   }
   open.value = true;
   title.value = "添加部门";
-  // 获取部门下拉树，直接复用列表数据
   deptOptions.value = rawDeptList.value;
 };
 
-// 修改按钮操作
 const handleEdit = async (row: any) => {
   reset();
-  // 填充表单数据
   Object.assign(form, row);
   open.value = true;
   title.value = "修改部门";
-  // 排除自身作为父节点（简单处理：获取全量数据作为选项）
   deptOptions.value = rawDeptList.value;
 };
 
-// 提交按钮
 const submitForm = async () => {
   if (!deptFormRef.value) return;
   await deptFormRef.value.validate(async (valid: boolean) => {
@@ -280,19 +286,16 @@ const submitForm = async () => {
       submitLoading.value = true;
       try {
         if (form.id != undefined) {
-          // 修改
-          await request.put('/admin/dept', form);
+          await request.put(`/admin/dept/${form.id}`, form);
           ElMessage.success("修改成功");
         } else {
-          // 新增
           await request.post('/admin/dept', form);
           ElMessage.success("新增成功");
         }
         open.value = false;
         getList();
-      } catch (error: any) {
-        // request interceptor might handle error, but we can also log here
-        console.error(error);
+      } catch (error) {
+        // error handled
       } finally {
         submitLoading.value = false;
       }
@@ -300,7 +303,6 @@ const submitForm = async () => {
   });
 };
 
-// 删除按钮操作
 const handleDelete = async (row: any) => {
   try {
     await request.delete(`/admin/dept/${row.id}`);
@@ -318,7 +320,63 @@ onMounted(() => {
 
 <style scoped>
 .app-container {
-  /* 使得表格卡片充满屏幕高度的视觉感 */
-  min-height: calc(100vh - 84px);
+  padding: 20px;
+  background-color: #f5f7fa;
+  min-height: 100vh;
+}
+.filter-card {
+  margin-bottom: 20px;
+}
+:deep(.el-card__body) {
+  padding: 15px 20px;
+}
+.header-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.header-left {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.filter-input {
+  width: 240px;
+}
+
+/* 树形表格样式 */
+.dept-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-icon {
+  font-size: 16px;
+  color: #909399;
+}
+.folder-icon.has-child {
+  color: #e6a23c; /* 文件夹颜色 */
+}
+.leader-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.leader-avatar {
+  background-color: #409eff;
+  font-size: 12px;
+}
+.time-text {
+  font-size: 12px;
+  color: #909399;
+}
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.w-full {
+  width: 100%;
 }
 </style>
