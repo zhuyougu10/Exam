@@ -30,7 +30,7 @@ import java.util.Map;
  * 基于 Spring 6 RestClient 实现，支持动态 Key 和日志脱敏
  *
  * @author MySQL数据库架构师
- * @version 1.4.0 (修复doc_form参数)
+ * @version 1.5.0 (新增文档列表查询)
  * @since 2025-12-10
  */
 @Slf4j
@@ -130,9 +130,7 @@ public class DifyClient {
             MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
             parts.add("file", fileResource);
 
-            // 修复: 移除 "doc_form":"text_model"
-            // 原因: Dify 知识库已有预设类型(如文本或QA)，强制指定不匹配的类型会导致 400 错误。
-            // 移除后，Dify 会自动使用该知识库本身的类型配置。
+            // Dify 知识库已有预设类型(如文本或QA)，不强制指定 process_rule 以避免冲突
             String dataJson = "{\"indexing_technique\":\"high_quality\",\"process_rule\":{\"mode\":\"automatic\"}}";
             parts.add("data", dataJson);
 
@@ -149,6 +147,30 @@ public class DifyClient {
         } catch (Exception e) {
             log.error("Dify 文档上传失败", e);
             throw new BizException(500, "知识库上传失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取知识库文档列表 (用于状态同步)
+     * URL: GET {base_url}/datasets/{dataset_id}/documents
+     */
+    public Map getDocumentList(String apiKey, String datasetId, int page, int limit) {
+        try {
+            return getClient(apiKey).get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/datasets/{datasetId}/documents")
+                            .queryParam("page", page)
+                            .queryParam("limit", limit)
+                            .build(datasetId))
+                    .retrieve()
+                    .body(Map.class);
+        } catch (HttpClientErrorException e) {
+            log.warn("Dify 获取列表异常: Status={}", e.getStatusCode());
+            // 不抛出异常阻断业务，返回空即可
+            return null;
+        } catch (Exception e) {
+            log.error("Dify 获取文档列表失败", e);
+            return null;
         }
     }
 

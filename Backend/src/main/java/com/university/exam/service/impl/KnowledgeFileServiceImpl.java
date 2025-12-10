@@ -3,6 +3,7 @@ package com.university.exam.service.impl;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.university.exam.common.exception.BizException;
 import com.university.exam.common.utils.DifyClient;
 import com.university.exam.entity.CourseUser;
@@ -10,7 +11,6 @@ import com.university.exam.entity.KnowledgeFile;
 import com.university.exam.mapper.KnowledgeFileMapper;
 import com.university.exam.service.CourseUserService;
 import com.university.exam.service.KnowledgeFileService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.FileSystemResource;
@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -41,7 +42,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
     private final DifyClient difyClient;
     private final CourseUserService courseUserService;
 
-    // 本地文件存储路径 (实际生产环境建议配置在 application.yml 或使用 OSS)
+    // 本地文件存储路径
     private static final String UPLOAD_DIR = System.getProperty("user.dir") + File.separator + "uploads" + File.separator;
 
     @Override
@@ -68,23 +69,20 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         }
 
         try {
-            // 关键修复：transferTo 会消耗 MultipartFile 的流，移动后 MultipartFile 不再可用
             file.transferTo(dest);
         } catch (IOException e) {
             log.error("文件保存失败", e);
             throw new BizException(500, "文件保存失败");
         }
 
-        String fileUrl = "/uploads/" + fileName; // 模拟访问路径
+        String fileUrl = "/uploads/" + fileName;
 
         // 3. 调用 Dify API 上传
         String difyDocumentId;
         try {
-            // 关键修复：使用已保存的本地文件创建 Resource，避免读取已关闭的 MultipartFile 流
             FileSystemResource fileResource = new FileSystemResource(dest);
             Map result = difyClient.uploadDocument(apiKey, datasetId, fileResource);
 
-            // 解析返回结果，获取 document.id
             if (result != null && result.containsKey("document")) {
                 Map document = (Map) result.get("document");
                 difyDocumentId = (String) document.get("id");
@@ -92,9 +90,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
                 throw new BizException(500, "Dify 响应异常，未获取到文档ID");
             }
         } catch (Exception e) {
-            // 如果 Dify 上传失败，删除本地文件，保持一致性
-            FileUtil.del(dest);
-            // 重新抛出异常，触发事务回滚
+            FileUtil.del(dest); // 失败则清理本地文件
             throw e;
         }
 
@@ -120,15 +116,16 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         Long userId = getCurrentUserId();
         Integer role = getCurrentUserRole();
 
-        // 1. 权限校验
+        List<KnowledgeFile> list;
+
+        // 1. 权限校验与查询
         if (role == 3) { // 管理员
-            // 管理员可以查看所有，如果指定了 courseId 则筛选
             LambdaQueryWrapper<KnowledgeFile> query = new LambdaQueryWrapper<>();
             if (courseId != null) {
                 query.eq(KnowledgeFile::getCourseId, courseId);
             }
             query.orderByDesc(KnowledgeFile::getCreateTime);
-            return this.list(query);
+            list = this.list(query);
         } else if (role == 2) { // 教师
             if (courseId == null) {
                 throw new BizException(400, "教师查询需指定课程ID");
@@ -137,18 +134,80 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
             long count = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
                     .eq(CourseUser::getUserId, userId)
                     .eq(CourseUser::getCourseId, courseId)
-                    .eq(CourseUser::getRole, 2)); // 角色2为教师关联
+                    .eq(CourseUser::getRole, 2));
 
             if (count == 0) {
                 throw new BizException(403, "无权访问该课程的资料");
             }
 
-            return this.list(new LambdaQueryWrapper<KnowledgeFile>()
+            list = this.list(new LambdaQueryWrapper<KnowledgeFile>()
                     .eq(KnowledgeFile::getCourseId, courseId)
                     .orderByDesc(KnowledgeFile::getCreateTime));
         } else {
-            // 学生或其他角色暂未开放
             throw new BizException(403, "当前角色无权访问知识库");
+        }
+
+        // 2. 核心修复：同步 Dify 状态
+        // 只有当列表中包含"索引中(1)"状态的文件时，才调用 Dify API
+        syncDifyStatus(list);
+
+        return list;
+    }
+
+    /**
+     * 同步 Dify 文档状态
+     * 针对处于 status=1 (索引中) 的文件进行状态检查
+     */
+    private void syncDifyStatus(List<KnowledgeFile> list) {
+        if (list == null || list.isEmpty()) return;
+
+        // 筛选出需要同步的文件 (状态为1且有Dify ID)
+        List<KnowledgeFile> processingFiles = list.stream()
+                .filter(f -> f.getStatus() == 1 && f.getDifyDocumentId() != null)
+                .toList();
+
+        if (processingFiles.isEmpty()) return;
+
+        try {
+            String apiKey = difyClient.getKnowledgeKey();
+            String datasetId = difyClient.getGlobalDatasetId();
+
+            // 获取最新文档列表 (假设最近上传的文件在前20条内)
+            Map result = difyClient.getDocumentList(apiKey, datasetId, 1, 50);
+
+            if (result != null && result.containsKey("data")) {
+                List<Map> difyDocs = (List<Map>) result.get("data");
+                boolean hasUpdates = false;
+
+                for (KnowledgeFile file : processingFiles) {
+                    // 在 Dify 返回列表中查找对应 ID
+                    difyDocs.stream()
+                            .filter(doc -> file.getDifyDocumentId().equals(doc.get("id")))
+                            .findFirst()
+                            .ifPresent(doc -> {
+                                String status = (String) doc.get("indexing_status");
+                                // Dify状态: indexing, completed, error, waiting, parsing
+                                if ("completed".equals(status)) {
+                                    file.setStatus((byte) 2); // 可用
+                                    file.setUpdateTime(LocalDateTime.now());
+                                } else if ("error".equals(status)) {
+                                    file.setStatus((byte) 3); // 失败
+                                    file.setUpdateTime(LocalDateTime.now());
+                                }
+                            });
+                }
+
+                // 批量更新数据库 (仅更新状态发生变化的文件)
+                List<KnowledgeFile> updatedFiles = processingFiles.stream()
+                        .filter(f -> f.getStatus() != 1)
+                        .collect(Collectors.toList());
+
+                if (!updatedFiles.isEmpty()) {
+                    this.updateBatchById(updatedFiles);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("同步 Dify 状态失败，本次忽略: {}", e.getMessage());
         }
     }
 
@@ -163,9 +222,8 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         Long userId = getCurrentUserId();
         Integer role = getCurrentUserRole();
 
-        // 1. 权限校验 (管理员可删任意，教师只能删自己课程的)
+        // 1. 权限校验
         if (role != 3) {
-            // 教师：检查是否是该课程的授课教师
             long count = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
                     .eq(CourseUser::getUserId, userId)
                     .eq(CourseUser::getCourseId, file.getCourseId())
@@ -179,25 +237,27 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         String apiKey = difyClient.getKnowledgeKey();
         String datasetId = difyClient.getGlobalDatasetId();
 
-        // 只有当存在 Dify ID 时才调用远程删除
         if (file.getDifyDocumentId() != null) {
             try {
                 difyClient.deleteDocument(apiKey, datasetId, file.getDifyDocumentId());
             } catch (Exception e) {
                 log.warn("Dify文件删除失败，仅删除本地记录: {}", e.getMessage());
-                // 这里选择吞掉异常，确保本地数据能被删除，防止数据不一致死锁
             }
         }
 
         // 3. 数据库逻辑删除
         file.setUpdateBy(userId);
         file.setUpdateTime(LocalDateTime.now());
-        this.removeById(id); // MyBatis-Plus 默认逻辑删除
+        this.removeById(id);
 
-        // 4. 删除本地文件 (可选)
+        // 4. 删除本地文件
         if (file.getFileUrl() != null && file.getFileUrl().startsWith("/uploads/")) {
-            String localPath = UPLOAD_DIR + file.getFileUrl().substring("/uploads/".length());
-            FileUtil.del(localPath);
+            try {
+                String localPath = UPLOAD_DIR + file.getFileUrl().substring("/uploads/".length());
+                FileUtil.del(localPath);
+            } catch (Exception e) {
+                log.warn("本地文件删除失败: {}", e.getMessage());
+            }
         }
     }
 
