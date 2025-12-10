@@ -13,6 +13,7 @@ import com.university.exam.service.KnowledgeFileService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,7 +57,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         String apiKey = difyClient.getKnowledgeKey();
         String datasetId = difyClient.getGlobalDatasetId();
 
-        // 2. 保存文件到本地 (模拟 OSS)
+        // 2. 保存文件到本地
         String originalFilename = file.getOriginalFilename();
         String suffix = FileUtil.getSuffix(originalFilename);
         String fileName = IdUtil.simpleUUID() + "." + suffix;
@@ -67,6 +68,7 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         }
 
         try {
+            // 关键修复：transferTo 会消耗 MultipartFile 的流，移动后 MultipartFile 不再可用
             file.transferTo(dest);
         } catch (IOException e) {
             log.error("文件保存失败", e);
@@ -78,9 +80,11 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
         // 3. 调用 Dify API 上传
         String difyDocumentId;
         try {
-            Map result = difyClient.uploadDocument(apiKey, datasetId, file);
+            // 关键修复：使用已保存的本地文件创建 Resource，避免读取已关闭的 MultipartFile 流
+            FileSystemResource fileResource = new FileSystemResource(dest);
+            Map result = difyClient.uploadDocument(apiKey, datasetId, fileResource);
+
             // 解析返回结果，获取 document.id
-            // Dify 响应结构: { "document": { "id": "...", ... }, ... }
             if (result != null && result.containsKey("document")) {
                 Map document = (Map) result.get("document");
                 difyDocumentId = (String) document.get("id");
@@ -88,8 +92,9 @@ public class KnowledgeFileServiceImpl extends ServiceImpl<KnowledgeFileMapper, K
                 throw new BizException(500, "Dify 响应异常，未获取到文档ID");
             }
         } catch (Exception e) {
-            // 如果 Dify 上传失败，删除本地文件（可选）
+            // 如果 Dify 上传失败，删除本地文件，保持一致性
             FileUtil.del(dest);
+            // 重新抛出异常，触发事务回滚
             throw e;
         }
 

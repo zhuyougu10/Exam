@@ -7,6 +7,7 @@ import com.university.exam.service.ConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.MediaType;
@@ -18,7 +19,6 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +30,7 @@ import java.util.Map;
  * 基于 Spring 6 RestClient 实现，支持动态 Key 和日志脱敏
  *
  * @author MySQL数据库架构师
- * @version 1.1.0
+ * @version 1.2.0
  * @since 2025-12-10
  */
 @Slf4j
@@ -101,7 +101,7 @@ public class DifyClient {
     private String getConfigValue(String key) {
         Config config = configService.getOne(new LambdaQueryWrapper<Config>()
                 .eq(Config::getConfigKey, key));
-        
+
         if (config == null || !StringUtils.hasText(config.getConfigValue())) {
             throw new BizException(500, "系统未配置参数: " + key);
         }
@@ -114,7 +114,7 @@ public class DifyClient {
      * 执行工作流 (Workflow)
      * URL: POST {base_url}/workflows/run
      *
-     * @param apiKey 工作流应用的 API Key (可通过 getGenerationKey() 等方法获取)
+     * @param apiKey 工作流应用的 API Key
      * @param inputs 输入参数 Map
      * @param userId 用户标识
      * @return 响应结果 Map (通常包含 data.outputs)
@@ -142,29 +142,23 @@ public class DifyClient {
      * 上传文档到知识库
      * URL: POST {base_url}/datasets/{dataset_id}/document/create_by_file
      *
-     * @param apiKey    知识库应用的 API Key (可通过 getKnowledgeKey() 获取)
-     * @param datasetId 知识库 ID
-     * @param file      上传的文件
+     * @param apiKey       知识库应用的 API Key
+     * @param datasetId    知识库 ID
+     * @param fileResource 文件资源 (FileSystemResource 或 ByteArrayResource)
      * @return 响应结果 Map (包含 document 信息)
      */
-    public Map uploadDocument(String apiKey, String datasetId, MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new BizException(400, "上传文件不能为空");
+    public Map uploadDocument(String apiKey, String datasetId, Resource fileResource) {
+        if (fileResource == null) {
+            throw new BizException(400, "上传文件资源不能为空");
         }
 
         try {
             // 构建 Multipart 表单数据
             MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
-            
-            // 封装文件资源，必须重写 getFilename 以便 RestClient 识别
-            ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
-                @Override
-                public String getFilename() {
-                    return file.getOriginalFilename();
-                }
-            };
+
+            // 添加文件资源
             parts.add("file", fileResource);
-            
+
             // 构建 data 参数 (JSON 字符串)
             // 默认使用高质量索引和自动分段规则
             String dataJson = "{\"indexing_technique\":\"high_quality\",\"process_rule\":{\"mode\":\"automatic\"}}";
@@ -177,8 +171,6 @@ public class DifyClient {
                     .retrieve()
                     .body(Map.class);
 
-        } catch (IOException e) {
-            throw new BizException(500, "文件处理失败");
         } catch (Exception e) {
             log.error("Dify 文档上传失败", e);
             throw new BizException(500, "知识库上传失败: " + e.getMessage());
@@ -228,10 +220,11 @@ public class DifyClient {
             }
 
             String bodyStr = new String(body, StandardCharsets.UTF_8);
-            // 对于文件上传，body可能是乱码或太长，简化显示
-            if (request.getHeaders().getContentType() != null && 
-                request.getHeaders().getContentType().toString().contains(MediaType.MULTIPART_FORM_DATA_VALUE)) {
-                bodyStr = "[Multipart Data]";
+
+            // 修复：使用 isCompatibleWith 判断 Multipart 类型，避免 includes 方法不存在或类型不匹配问题
+            MediaType contentType = request.getHeaders().getContentType();
+            if (contentType != null && contentType.isCompatibleWith(MediaType.MULTIPART_FORM_DATA)) {
+                bodyStr = "[Multipart Data (Binary Omitted)]";
             }
 
             log.info(">>> Dify Req: Method={}, URI={}, Headers={}, Body={}",
