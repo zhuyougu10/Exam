@@ -38,7 +38,7 @@ public class Question implements Serializable {
     private Long courseId;
 
     /**
-     * 题目类型（1-单选, 2-多选, 3-判断, 4-简答）
+     * 题目类型（1-单选, 2-多选, 3-判断, 4-简答, 5-填空）
      */
     @TableField("type")
     private Byte type;
@@ -48,6 +48,12 @@ public class Question implements Serializable {
      */
     @TableField("content")
     private String content;
+
+    /**
+     * 内容MD5哈希值 (用于查重)
+     */
+    @TableField("content_hash")
+    private String contentHash;
 
     /**
      * 题目图片URL
