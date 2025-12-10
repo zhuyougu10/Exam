@@ -299,6 +299,43 @@
 - `smart-exam-web/src/views/admin/SysConfig.vue`：系统设置页面
 - `smart-exam-web/src/views/profile/index.vue`：个人中心页面
 
+
+阶段 1.6：Dify 客户端封装
+
+完成状态
+
+✅ 已完成
+
+实现说明
+
+客户端封装：
+
+创建了 DifyClient 工具类 (Backend/src/main/java/com/university/exam/common/utils/DifyClient.java)。
+
+采用 Spring 6 RestClient 作为底层 HTTP 客户端，具备轻量、流式 API 特性。
+
+实现了 runWorkflow（执行工作流）、uploadDocument（RAG 知识库上传）、deleteDocument（删除文档）三个核心方法。
+
+动态配置：
+
+Base URL 不再硬编码，而是通过 ConfigService 从数据库 sys_config 表中读取 dify_base_url 键值，实现了环境隔离和动态切换。
+
+所有 API 方法均设计为接收 apiKey 参数，支持不同应用（如出题应用、阅卷应用）使用不同的 Key。
+
+安全脱敏：
+
+实现了内部拦截器 DifyRequestLogger。
+
+在记录请求日志时，自动拦截 Authorization Header，将敏感的 API Key 替换为 Bearer sk-******。
+
+针对 Multipart 文件上传请求，自动隐藏二进制 Body 内容，防止日志刷屏。
+
+生成的关键文件
+
+Backend/src/main/java/com/university/exam/common/utils/DifyClient.java：Dify API 通信核心类
+
+设计日期：2025-12-09
+设计人员：MySQL数据库架构师
 ---
 
 **设计日期**：2025-12-09
