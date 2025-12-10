@@ -20,6 +20,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/knowledge")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole(2, 3)")
 public class KnowledgeBaseController {
 
     private final KnowledgeFileService knowledgeFileService;
@@ -33,7 +34,6 @@ public class KnowledgeBaseController {
      * @return 上传结果
      */
     @PostMapping("/upload")
-    @PreAuthorize("hasAnyRole(2, 3)") // 仅教师(2)和管理员(3)可操作
     public Result<?> upload(@RequestParam("courseId") Long courseId,
                             @RequestParam("file") MultipartFile file) {
         KnowledgeFile result = knowledgeFileService.uploadFile(courseId, file);
@@ -48,7 +48,6 @@ public class KnowledgeBaseController {
      * @return 文件列表
      */
     @GetMapping("/list")
-    @PreAuthorize("hasAnyRole(2, 3)")
     public Result<?> getList(@RequestParam(value = "courseId", required = false) Long courseId) {
         List<KnowledgeFile> list = knowledgeFileService.getList(courseId);
         return Result.success(list);
@@ -62,7 +61,6 @@ public class KnowledgeBaseController {
      * @return 删除结果
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole(2, 3)")
     public Result<?> delete(@PathVariable Long id) {
         knowledgeFileService.deleteFile(id);
         return Result.success("文件删除成功");

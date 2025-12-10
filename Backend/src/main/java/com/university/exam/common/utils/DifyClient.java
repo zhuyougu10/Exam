@@ -6,7 +6,6 @@ import com.university.exam.entity.Config;
 import com.university.exam.service.ConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
@@ -18,6 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
@@ -30,7 +30,7 @@ import java.util.Map;
  * 基于 Spring 6 RestClient 实现，支持动态 Key 和日志脱敏
  *
  * @author MySQL数据库架构师
- * @version 1.2.0
+ * @version 1.4.0 (修复doc_form参数)
  * @since 2025-12-10
  */
 @Slf4j
@@ -60,44 +60,26 @@ public class DifyClient {
 
     // ================== 配置获取辅助方法 ==================
 
-    /**
-     * 获取 Dify Base URL
-     */
     public String getBaseUrl() {
         return getConfigValue(KEY_BASE_URL);
     }
 
-    /**
-     * 获取知识库专用 API Key
-     */
     public String getKnowledgeKey() {
         return getConfigValue(KEY_KNOWLEDGE_API_KEY);
     }
 
-    /**
-     * 获取出题应用 API Key
-     */
     public String getGenerationKey() {
         return getConfigValue(KEY_GENERATION_API_KEY);
     }
 
-    /**
-     * 获取阅卷应用 API Key
-     */
     public String getGradingKey() {
         return getConfigValue(KEY_GRADING_API_KEY);
     }
 
-    /**
-     * 获取全局知识库 Dataset ID
-     */
     public String getGlobalDatasetId() {
         return getConfigValue(KEY_GLOBAL_DATASET_ID);
     }
 
-    /**
-     * 通用配置获取逻辑
-     */
     private String getConfigValue(String key) {
         Config config = configService.getOne(new LambdaQueryWrapper<Config>()
                 .eq(Config::getConfigKey, key));
@@ -112,12 +94,6 @@ public class DifyClient {
 
     /**
      * 执行工作流 (Workflow)
-     * URL: POST {base_url}/workflows/run
-     *
-     * @param apiKey 工作流应用的 API Key
-     * @param inputs 输入参数 Map
-     * @param userId 用户标识
-     * @return 响应结果 Map (通常包含 data.outputs)
      */
     public Map runWorkflow(String apiKey, Map<String, Object> inputs, String userId) {
         Map<String, Object> body = new HashMap<>();
@@ -132,6 +108,9 @@ public class DifyClient {
                     .body(body)
                     .retrieve()
                     .body(Map.class);
+        } catch (HttpClientErrorException e) {
+            handleHttpClientError(e);
+            return null;
         } catch (Exception e) {
             log.error("Dify 工作流执行失败", e);
             throw new BizException(500, "AI 服务调用失败: " + e.getMessage());
@@ -141,11 +120,6 @@ public class DifyClient {
     /**
      * 上传文档到知识库
      * URL: POST {base_url}/datasets/{dataset_id}/document/create_by_file
-     *
-     * @param apiKey       知识库应用的 API Key
-     * @param datasetId    知识库 ID
-     * @param fileResource 文件资源 (FileSystemResource 或 ByteArrayResource)
-     * @return 响应结果 Map (包含 document 信息)
      */
     public Map uploadDocument(String apiKey, String datasetId, Resource fileResource) {
         if (fileResource == null) {
@@ -153,14 +127,12 @@ public class DifyClient {
         }
 
         try {
-            // 构建 Multipart 表单数据
             MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
-
-            // 添加文件资源
             parts.add("file", fileResource);
 
-            // 构建 data 参数 (JSON 字符串)
-            // 默认使用高质量索引和自动分段规则
+            // 修复: 移除 "doc_form":"text_model"
+            // 原因: Dify 知识库已有预设类型(如文本或QA)，强制指定不匹配的类型会导致 400 错误。
+            // 移除后，Dify 会自动使用该知识库本身的类型配置。
             String dataJson = "{\"indexing_technique\":\"high_quality\",\"process_rule\":{\"mode\":\"automatic\"}}";
             parts.add("data", dataJson);
 
@@ -171,6 +143,9 @@ public class DifyClient {
                     .retrieve()
                     .body(Map.class);
 
+        } catch (HttpClientErrorException e) {
+            handleHttpClientError(e);
+            return null;
         } catch (Exception e) {
             log.error("Dify 文档上传失败", e);
             throw new BizException(500, "知识库上传失败: " + e.getMessage());
@@ -179,11 +154,6 @@ public class DifyClient {
 
     /**
      * 删除知识库文档
-     * URL: DELETE {base_url}/datasets/{dataset_id}/documents/{document_id}
-     *
-     * @param apiKey     知识库应用的 API Key
-     * @param datasetId  知识库 ID
-     * @param documentId 文档 ID
      */
     public void deleteDocument(String apiKey, String datasetId, String documentId) {
         try {
@@ -192,10 +162,33 @@ public class DifyClient {
                     .retrieve()
                     .toBodilessEntity();
             log.info("Dify 文档删除成功: datasetId={}, docId={}", datasetId, documentId);
+        } catch (HttpClientErrorException e) {
+            log.warn("Dify 文档删除异常: {}", e.getMessage());
+            // 删除时如果报 404，可以忽略，视为已删除
+            if (e.getStatusCode().value() != 404) {
+                handleHttpClientError(e);
+            }
         } catch (Exception e) {
             log.error("Dify 文档删除失败", e);
             throw new BizException(500, "知识库文档删除失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 统一处理 Dify API 错误响应
+     */
+    private void handleHttpClientError(HttpClientErrorException e) {
+        log.error("Dify API Error: Status={}, Body={}", e.getStatusCode(), e.getResponseBodyAsString());
+        if (e.getStatusCode().value() == 401) {
+            throw new BizException(401, "Dify API Key 无效或过期，请检查系统设置");
+        } else if (e.getStatusCode().value() == 403) {
+            throw new BizException(403, "Dify API 权限不足，请检查应用权限");
+        } else if (e.getStatusCode().value() == 404) {
+            throw new BizException(404, "Dify 资源不存在 (Dataset ID 可能错误)");
+        } else if (e.getStatusCode().value() == 400) {
+            throw new BizException(400, "Dify 参数错误: " + e.getResponseBodyAsString());
+        }
+        throw new BizException(e.getStatusCode().value(), "Dify 服务错误: " + e.getStatusText());
     }
 
     /**
@@ -214,14 +207,11 @@ public class DifyClient {
             HttpHeaders headers = new HttpHeaders();
             headers.putAll(request.getHeaders());
 
-            // 核心脱敏逻辑：替换 Authorization 头
             if (headers.containsKey(HttpHeaders.AUTHORIZATION)) {
                 headers.set(HttpHeaders.AUTHORIZATION, "Bearer sk-******");
             }
 
             String bodyStr = new String(body, StandardCharsets.UTF_8);
-
-            // 修复：使用 isCompatibleWith 判断 Multipart 类型，避免 includes 方法不存在或类型不匹配问题
             MediaType contentType = request.getHeaders().getContentType();
             if (contentType != null && contentType.isCompatibleWith(MediaType.MULTIPART_FORM_DATA)) {
                 bodyStr = "[Multipart Data (Binary Omitted)]";

@@ -32,7 +32,7 @@ import java.util.Map;
  * 处理用户管理、组织架构、课程管理和系统设置相关请求
  *
  * @author MySQL数据库架构师
- * @version 1.0.0
+ * @version 1.1.0
  * @since 2025-12-09
  */
 @Slf4j
@@ -470,7 +470,7 @@ public class SysAdminController {
             if (configKey.toLowerCase().contains("password") || configKey.toLowerCase().contains("key") ||
                     configKey.toLowerCase().contains("secret") || configKey.toLowerCase().contains("token")) {
                 // 脱敏处理：只保留前3位和后3位，中间用*代替
-                if (configValue.length() > 6) {
+                if (configValue != null && configValue.length() > 6) {
                     configValue = configValue.substring(0, 3) + "******" + configValue.substring(configValue.length() - 3);
                 } else {
                     configValue = "******";
@@ -497,6 +497,8 @@ public class SysAdminController {
             throw new BizException(400, "配置列表不能为空");
         }
 
+        Long currentUserId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
         // 2. 更新配置
         for (Config config : configList) {
             if (config.getId() == null || !StringUtils.hasText(config.getConfigKey())) {
@@ -509,12 +511,19 @@ public class SysAdminController {
                 throw new BizException(404, "配置项不存在：" + config.getConfigKey());
             }
 
-            // 4. 设置更新人和更新时间
-            Long currentUserId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            // 4. 关键修复：防止脱敏数据覆盖真实数据
+            // 如果前端传回的 value 包含 "******"，说明用户没有修改该字段，应保持数据库原值
+            String newValue = config.getConfigValue();
+            if (newValue != null && newValue.contains("******")) {
+                // 用户未修改，使用数据库中的旧值
+                config.setConfigValue(existingConfig.getConfigValue());
+            }
+
+            // 5. 设置更新人和更新时间
             config.setUpdateBy(currentUserId);
             config.setUpdateTime(LocalDateTime.now());
 
-            // 5. 更新配置
+            // 6. 更新配置
             configService.updateById(config);
         }
 

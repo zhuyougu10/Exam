@@ -299,43 +299,97 @@
 - `smart-exam-web/src/views/admin/SysConfig.vue`：系统设置页面
 - `smart-exam-web/src/views/profile/index.vue`：个人中心页面
 
+## 阶段 1.6：Dify 客户端封装
 
-阶段 1.6：Dify 客户端封装
-
-完成状态
+### 完成状态
 
 ✅ 已完成
 
-实现说明
+### 实现说明
 
-客户端封装：
+#### 客户端封装：
 
-创建了 DifyClient 工具类 (Backend/src/main/java/com/university/exam/common/utils/DifyClient.java)。
+- 创建了 DifyClient 工具类 (`Backend/src/main/java/com/university/exam/common/utils/DifyClient.java`)。
+- 采用 Spring 6 RestClient 作为底层 HTTP 客户端，具备轻量、流式 API 特性。
+- 实现了 `runWorkflow`（执行工作流）、`uploadDocument`（RAG 知识库上传）、`deleteDocument`（删除文档）三个核心方法。
 
-采用 Spring 6 RestClient 作为底层 HTTP 客户端，具备轻量、流式 API 特性。
+#### 动态配置：
 
-实现了 runWorkflow（执行工作流）、uploadDocument（RAG 知识库上传）、deleteDocument（删除文档）三个核心方法。
+- Base URL 不再硬编码，而是通过 ConfigService 从数据库 `sys_config` 表中读取 `dify_base_url` 键值，实现了环境隔离和动态切换。
+- 所有 API 方法均设计为接收 `apiKey` 参数，支持不同应用（如出题应用、阅卷应用）使用不同的 Key。
 
-动态配置：
+#### 安全脱敏：
 
-Base URL 不再硬编码，而是通过 ConfigService 从数据库 sys_config 表中读取 dify_base_url 键值，实现了环境隔离和动态切换。
+- 实现了内部拦截器 `DifyRequestLogger`。
+- 在记录请求日志时，自动拦截 Authorization Header，将敏感的 API Key 替换为 `Bearer sk-******`。
+- 针对 Multipart 文件上传请求，自动隐藏二进制 Body 内容，防止日志刷屏。
 
-所有 API 方法均设计为接收 apiKey 参数，支持不同应用（如出题应用、阅卷应用）使用不同的 Key。
+### 生成的关键文件
 
-安全脱敏：
+- `Backend/src/main/java/com/university/exam/common/utils/DifyClient.java`：Dify API 通信核心类
 
-实现了内部拦截器 DifyRequestLogger。
+---
 
-在记录请求日志时，自动拦截 Authorization Header，将敏感的 API Key 替换为 Bearer sk-******。
+## 阶段 2.1：知识库后端接口
 
-针对 Multipart 文件上传请求，自动隐藏二进制 Body 内容，防止日志刷屏。
+### 完成状态
 
-生成的关键文件
+✅ 已完成
 
-Backend/src/main/java/com/university/exam/common/utils/DifyClient.java：Dify API 通信核心类
+### 实现说明
 
-设计日期：2025-12-09
-设计人员：MySQL数据库架构师
+#### 控制器 (KnowledgeBaseController)：
+
+- 实现了 `/api/knowledge/upload`、`/list`、`/{id}` 三个核心接口。
+- 添加了 `@PreAuthorize` 权限控制，仅允许教师和管理员访问。
+
+#### 业务逻辑 (KnowledgeFileServiceImpl)：
+
+- **上传流程**：实现了"文件本地存储 -> 调用 DifyClient 上传 -> 数据库记录"的完整链路。
+- **权限隔离**：在查询列表和删除文件时，严格校验了教师与课程的绑定关系（通过 `sys_course_user` 表），确保教师只能操作自己课程的资料。管理员拥有所有权限。
+- **数据一致性**：在删除文件时，同步删除了 Dify 上的文档、数据库记录以及本地文件。
+
+#### 集成情况：
+
+- 成功集成了 DifyClient，动态读取 `sys_config` 中的 Key 进行操作。
+- 文件临时存储路径设置为项目根目录下的 `uploads/` 目录。
+
+### 生成的关键文件
+
+- `Backend/src/main/java/com/university/exam/controller/KnowledgeBaseController.java`
+- `Backend/src/main/java/com/university/exam/service/impl/KnowledgeFileServiceImpl.java`
+
+---
+
+## 阶段 2.2：知识库前端页面
+
+### 完成状态
+
+✅ 已完成
+
+### 实现说明
+
+#### 页面布局：
+
+- 使用了左右/上下分栏布局：上方为全局筛选（课程选择、搜索），下方左侧为上传区域，右侧为文件列表。
+- UI 风格采用了 Element Plus 结合 Tailwind CSS，使用了卡片、图标和柔和的配色（Indigo/Gray），视觉效果现代化。
+
+#### 交互逻辑：
+
+- **课程联动**：进入页面自动加载课程列表并选中第一个，文件列表随课程切换而更新。
+- **文件上传**：使用 `el-upload` 的拖拽模式，自定义 `http-request` 调用后端 `/api/knowledge/upload` 接口，上传时带有加载状态和课程校验。
+- **状态轮询**：实现了智能轮询机制。当文件列表中存在"索引中 (status=1)"的文件时，前端会自动每 5 秒刷新一次列表，直到所有文件索引完成，提升用户体验。
+- **删除保护**：删除操作增加了 `Popconfirm` 二次确认，防止误删。
+
+#### 文件展示：
+
+- 列表展示了文件名、上传时间、Dify 文档 ID。
+- 根据文件后缀名（PDF/Word/MD）动态显示不同颜色的图标。
+- 状态标签（Tag）直观显示 Dify 索引状态。
+
+### 生成的关键文件
+
+- `smart-exam-web/src/views/teacher/KnowledgeBase.vue`
 ---
 
 **设计日期**：2025-12-09
