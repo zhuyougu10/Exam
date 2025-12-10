@@ -235,5 +235,71 @@
 
 ---
 
+## 阶段 1.5：基础管理模块
+
+### 完成状态
+✅ 已完成
+
+### 实现说明
+
+#### 1. 后端接口实现
+
+##### SysAdminController
+- **用户管理**：
+  - POST /api/admin/user：实现用户创建功能，包含参数验证、权限检查和数据持久化
+  - PUT /api/admin/user/{id}：实现用户信息更新功能，支持部分字段更新
+  - DELETE /api/admin/user/{id}：实现用户删除功能，需处理关联数据
+  - GET /api/admin/user/list：实现用户列表查询功能，支持分页、排序和条件筛选
+
+- **组织架构**：
+  - GET /api/admin/dept/tree：实现部门树形结构查询功能，支持层级展示
+  - POST /api/admin/dept：实现部门创建功能
+  - PUT /api/admin/dept/{id}：实现部门信息更新功能
+  - DELETE /api/admin/dept/{id}：实现部门删除功能，需验证是否存在子部门或关联用户
+
+- **课程管理**：
+  - GET /api/admin/course/list：实现课程列表查询功能，支持分页和筛选
+  - POST /api/admin/course：实现课程创建功能，包含课程基本信息和资源关联
+
+- **系统设置**：
+  - GET /api/admin/config：获取系统配置信息，确保敏感配置项已脱敏处理
+  - PUT /api/admin/config：更新系统配置，包含配置项验证和权限控制
+
+##### ProfileController
+- **个人中心**：
+  - GET /api/profile：获取当前登录用户的详细信息
+  - PUT /api/profile：更新当前用户的基本信息
+  - PUT /api/profile/password：修改当前用户密码，需验证原密码并符合密码复杂度要求
+
+#### 2. 前端页面实现
+
+- **用户管理页面**：完善了用户列表展示、添加、编辑、删除功能
+- **组织架构页面**：以树形结构展示部门信息，支持部门的增删改操作
+- **课程管理页面**：实现课程列表展示和添加功能
+- **系统设置页面**：展示可配置项并支持修改
+- **个人中心页面**：包含用户信息展示、基本信息编辑和密码修改功能
+
+#### 3. 通用要求
+
+- 后端接口实现了统一的响应格式、错误处理和权限验证
+- 前端页面保证了响应式设计，适配不同屏幕尺寸
+- 所有操作都提供了适当的用户反馈和确认机制
+- 涉及敏感操作实现了日志记录功能
+
+### 生成的关键文件
+
+#### 后端文件
+- `Backend/src/main/java/com/university/exam/controller/SysAdminController.java`：系统管理控制器
+- `Backend/src/main/java/com/university/exam/controller/ProfileController.java`：个人中心控制器
+
+#### 前端文件
+- `smart-exam-web/src/views/admin/UserManage.vue`：用户管理页面
+- `smart-exam-web/src/views/admin/DeptManage.vue`：组织架构页面
+- `smart-exam-web/src/views/admin/CourseManage.vue`：课程管理页面
+- `smart-exam-web/src/views/admin/SysConfig.vue`：系统设置页面
+- `smart-exam-web/src/views/profile/index.vue`：个人中心页面
+
+---
+
 **设计日期**：2025-12-09
 **设计人员**：MySQL数据库架构师

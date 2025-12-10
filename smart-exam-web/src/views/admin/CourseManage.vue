@@ -18,10 +18,11 @@
               />
             </el-form-item>
             <el-form-item label="所属院系" class="form-item-no-margin">
+              <!-- 修复点1：添加 value: 'id' 配置 -->
               <el-tree-select
                   v-model="queryParams.deptId"
                   :data="deptOptions"
-                  :props="{ label: 'deptName', children: 'children' }"
+                  :props="{ label: 'deptName', value: 'id', children: 'children' }"
                   placeholder="请选择院系"
                   clearable
                   check-strictly
@@ -168,10 +169,11 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="所属院系" prop="deptId">
+              <!-- 修复点2：添加 value: 'id' 配置 -->
               <el-tree-select
                   v-model="form.deptId"
                   :data="deptOptions"
-                  :props="{ label: 'deptName', children: 'children' }"
+                  :props="{ label: 'deptName', value: 'id', children: 'children' }"
                   placeholder="请选择院系"
                   check-strictly
                   class="w-full"
@@ -224,7 +226,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Plus, Picture, Link, School, Edit, Delete } from '@element-plus/icons-vue'
+import { Search, Plus, Picture, Link, School, Edit, Delete, Refresh } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 // 数据定义

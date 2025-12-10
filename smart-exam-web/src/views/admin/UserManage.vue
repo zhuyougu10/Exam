@@ -11,24 +11,24 @@
           </template>
           <div class="head-container">
             <el-input
-              v-model="deptName"
-              placeholder="请输入部门名称"
-              clearable
-              prefix-icon="Search"
-              class="mb-4"
+                v-model="deptName"
+                placeholder="请输入部门名称"
+                clearable
+                prefix-icon="Search"
+                class="mb-4"
             />
           </div>
           <div class="tree-container">
             <el-tree
-              ref="deptTreeRef"
-              :data="deptOptions"
-              :props="{ children: 'children', label: 'deptName' }"
-              :expand-on-click-node="false"
-              :filter-node-method="filterNode"
-              node-key="id"
-              default-expand-all
-              highlight-current
-              @node-click="handleNodeClick"
+                ref="deptTreeRef"
+                :data="deptOptions"
+                :props="{ children: 'children', label: 'deptName' }"
+                :expand-on-click-node="false"
+                :filter-node-method="filterNode"
+                node-key="id"
+                default-expand-all
+                highlight-current
+                @node-click="handleNodeClick"
             >
               <template #default="{ node, data }">
                 <span class="custom-tree-node">
@@ -48,41 +48,35 @@
           <div class="filter-wrapper">
             <div class="filter-left">
               <el-input
-                v-model="queryParams.username"
-                placeholder="输入用户名/姓名搜索"
-                class="filter-item w-240"
-                clearable
-                @clear="handleSearch"
-                @keyup.enter="handleSearch"
+                  v-model="queryParams.username"
+                  placeholder="输入用户名/姓名搜索"
+                  class="filter-item w-240"
+                  clearable
+                  @clear="handleSearch"
+                  @keyup.enter="handleSearch"
               >
                 <template #prefix><el-icon><Search /></el-icon></template>
               </el-input>
-              
+
               <!-- 部门选择已移至左侧，此处可保留作为辅助或移除，此处保留并与左侧联动 -->
               <el-select
-                v-model="queryParams.deptId"
-                placeholder="选择所属部门"
-                class="filter-item w-200"
-                clearable
-                @change="handleSearch"
-                @clear="handleSearch"
+                  v-model="queryParams.deptId"
+                  placeholder="选择所属部门"
+                  class="filter-item w-200"
+                  clearable
+                  @change="handleSearch"
+                  @clear="handleSearch"
               >
                 <template #prefix><el-icon><OfficeBuilding /></el-icon></template>
-                <el-tree-select
-                   v-if="false" 
-                   :data="deptOptions" 
-                   :props="{ label: 'deptName', children: 'children' }"
-                   check-strictly
-                />
-                <!-- 简单的扁平化展示，实际应使用 TreeSelect，这里简化为 Options 展示一级或扁平数据 -->
-                <el-option 
-                  v-for="item in flattenDepts(deptOptions)" 
-                  :key="item.id" 
-                  :label="item.deptName" 
-                  :value="item.id" 
+                <!-- 修复：虽然此处用的是 el-select + option，但也建议保持一致性，如果将来换回 tree-select 这里的 props 也要改 -->
+                <el-option
+                    v-for="item in flattenDepts(deptOptions)"
+                    :key="item.id"
+                    :label="item.deptName"
+                    :value="item.id"
                 />
               </el-select>
-              
+
               <el-button type="primary" @click="handleSearch">
                 <el-icon class="mr-1"><Search /></el-icon> 查询
               </el-button>
@@ -90,7 +84,7 @@
                 <el-icon class="mr-1"><Refresh /></el-icon> 重置
               </el-button>
             </div>
-            
+
             <div class="filter-right">
               <el-button type="success" class="action-btn" @click="handleAdd">
                 <el-icon class="mr-1"><Plus /></el-icon> 新增用户
@@ -102,14 +96,14 @@
         <!-- 数据表格区域 -->
         <el-card class="table-container" shadow="never">
           <el-table
-            v-loading="loading"
-            :data="userList"
-            style="width: 100%"
-            :header-cell-style="{ background: '#f8f9fa', color: '#606266', height: '50px' }"
-            stripe
+              v-loading="loading"
+              :data="userList"
+              style="width: 100%"
+              :header-cell-style="{ background: '#f8f9fa', color: '#606266', height: '50px' }"
+              stripe
           >
             <el-table-column prop="id" label="ID" width="80" align="center" sortable />
-            
+
             <el-table-column label="用户信息" min-width="200">
               <template #default="{ row }">
                 <div class="user-info-cell">
@@ -160,7 +154,7 @@
                     <el-icon :size="16"><EditPen /></el-icon>
                   </el-button>
                 </el-tooltip>
-                
+
                 <el-tooltip content="重置密码" placement="top" :enterable="false">
                   <el-button type="warning" text circle @click="handleResetPwd(row)">
                     <el-icon :size="16"><Key /></el-icon>
@@ -169,12 +163,12 @@
 
                 <el-tooltip content="删除" placement="top" :enterable="false">
                   <el-popconfirm
-                    title="确定要删除该用户吗？此操作不可恢复。"
-                    confirm-button-text="确定"
-                    cancel-button-text="取消"
-                    confirm-button-type="danger"
-                    width="220"
-                    @confirm="handleDelete(row.id)"
+                      title="确定要删除该用户吗？此操作不可恢复。"
+                      confirm-button-text="确定"
+                      cancel-button-text="取消"
+                      confirm-button-type="danger"
+                      width="220"
+                      @confirm="handleDelete(row.id)"
                   >
                     <template #reference>
                       <el-button type="danger" text circle>
@@ -190,14 +184,14 @@
           <!-- 分页组件 -->
           <div class="pagination-wrapper">
             <el-pagination
-              v-model:current-page="queryParams.page"
-              v-model:page-size="queryParams.size"
-              :total="total"
-              :page-sizes="[10, 20, 50, 100]"
-              layout="total, sizes, prev, pager, next, jumper"
-              background
-              @size-change="fetchData"
-              @current-change="fetchData"
+                v-model:current-page="queryParams.page"
+                v-model:page-size="queryParams.size"
+                :total="total"
+                :page-sizes="[10, 20, 50, 100]"
+                layout="total, sizes, prev, pager, next, jumper"
+                background
+                @size-change="fetchData"
+                @current-change="fetchData"
             />
           </div>
         </el-card>
@@ -206,12 +200,12 @@
 
     <!-- 新增/编辑对话框 -->
     <el-dialog
-      :title="dialogTitle"
-      v-model="dialogVisible"
-      width="580px"
-      class="user-dialog"
-      :close-on-click-modal="false"
-      destroy-on-close
+        :title="dialogTitle"
+        v-model="dialogVisible"
+        width="580px"
+        class="user-dialog"
+        :close-on-click-modal="false"
+        destroy-on-close
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px" class="dialog-form">
         <el-row :gutter="20">
@@ -229,10 +223,10 @@
 
         <el-form-item label="登录密码" prop="password" v-if="!form.id">
           <el-input
-            v-model="form.password"
-            type="password"
-            show-password
-            placeholder="默认密码：123456"
+              v-model="form.password"
+              type="password"
+              show-password
+              placeholder="默认密码：123456"
           >
             <template #prefix><el-icon><Lock /></el-icon></template>
           </el-input>
@@ -241,13 +235,14 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="所属部门" prop="deptId">
+              <!-- 修复点：添加 value: 'id' 配置 -->
               <el-tree-select
-                v-model="form.deptId"
-                :data="deptOptions"
-                :props="{ label: 'deptName', children: 'children' }"
-                placeholder="请选择部门"
-                check-strictly
-                class="w-full"
+                  v-model="form.deptId"
+                  :data="deptOptions"
+                  :props="{ label: 'deptName', value: 'id', children: 'children' }"
+                  placeholder="请选择部门"
+                  check-strictly
+                  class="w-full"
               />
             </el-form-item>
           </el-col>
@@ -423,13 +418,13 @@ const handleEdit = (row: any) => {
 
 const handleResetPwd = (row: any) => {
   ElMessageBox.confirm(
-    `确定重置用户 "${row.username}" 的密码为 123456 吗?`,
-    '重置密码',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-    }
+      `确定重置用户 "${row.username}" 的密码为 123456 吗?`,
+      '重置密码',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
   ).then(async () => {
     // 假设后端有重置接口
     ElMessage.info('功能开发中，请稍后')
@@ -511,30 +506,30 @@ const getDeptName = (deptId: number) => {
 .dept-tree-card {
   height: 100%;
   min-height: calc(100vh - 120px);
-  
+
   :deep(.el-card__header) {
     padding: 14px 16px;
     border-bottom: 1px solid #f0f2f5;
   }
-  
+
   .card-header {
     font-weight: 600;
     color: #303133;
   }
-  
+
   :deep(.el-card__body) {
     padding: 16px;
   }
-  
+
   .mb-4 {
     margin-bottom: 16px;
   }
-  
+
   .custom-tree-node {
     display: flex;
     align-items: center;
     font-size: 14px;
-    
+
     .el-icon {
       color: #909399;
     }
@@ -545,7 +540,7 @@ const getDeptName = (deptId: number) => {
 .filter-container {
   margin-bottom: 20px;
   border-radius: 8px;
-  
+
   :deep(.el-card__body) {
     padding: 16px 20px;
   }
@@ -557,14 +552,14 @@ const getDeptName = (deptId: number) => {
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
-  
+
   .filter-left {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
   }
-  
+
   .w-240 { width: 240px; }
   .w-200 { width: 200px; }
 }
@@ -581,33 +576,33 @@ const getDeptName = (deptId: number) => {
 .user-info-cell {
   display: flex;
   align-items: center;
-  
+
   .text-info {
     margin-left: 12px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     line-height: 1.3;
-    
+
     .realname {
       font-weight: 600;
       color: #303133;
       font-size: 14px;
     }
-    
+
     .username {
       font-size: 12px;
       color: #909399;
     }
   }
-  
+
   .el-avatar {
     border: 2px solid transparent;
     transition: all 0.3s;
     background-color: #f0f2f5;
     color: #909399;
     font-weight: bold;
-    
+
     &.role-admin { border-color: #f56c6c; color: #f56c6c; background-color: #fef0f0; }
     &.role-teacher { border-color: #e6a23c; color: #e6a23c; background-color: #fdf6ec; }
     &.role-student { border-color: #409eff; color: #409eff; background-color: #ecf5ff; }
@@ -619,7 +614,7 @@ const getDeptName = (deptId: number) => {
   display: flex;
   align-items: center;
   color: #606266;
-  
+
   .dept-icon {
     margin-right: 6px;
     color: #909399;
@@ -631,13 +626,13 @@ const getDeptName = (deptId: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  
+
   .status-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     margin-right: 6px;
-    
+
     &.bg-success { background-color: #67c23a; box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.2); }
     &.bg-danger { background-color: #f56c6c; box-shadow: 0 0 0 2px rgba(245, 108, 108, 0.2); }
   }
