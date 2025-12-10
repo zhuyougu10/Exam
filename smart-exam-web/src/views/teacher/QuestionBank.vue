@@ -1,6 +1,6 @@
 <template>
   <div class="app-container p-6 bg-gray-50 min-h-screen">
-    <!-- 顶部工具栏 (修复版：强制宽度与对齐) -->
+    <!-- 顶部工具栏 -->
     <el-card shadow="never" class="border-0 rounded-xl mb-4" :body-style="{ padding: '16px' }">
       <div class="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
 
@@ -125,7 +125,12 @@
                 </el-descriptions-item>
 
                 <el-descriptions-item label="参考答案">
-                  <span class="font-mono text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded border border-green-100">
+                  <span v-if="row.type === 3">
+                    <el-tag :type="String(row.answer) === '1' ? 'success' : 'danger'">
+                      {{ String(row.answer) === '1' ? '正确' : '错误' }}
+                    </el-tag>
+                  </span>
+                  <span v-else class="font-mono text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded border border-green-100">
                     {{ row.answer }}
                   </span>
                 </el-descriptions-item>
@@ -349,92 +354,90 @@
           />
         </el-form-item>
 
-        <!-- 3. 动态选项区 (单选/多选) - 修复布局问题 -->
-        <transition name="el-zoom-in-top">
-          <div v-if="[1, 2].includes(manualForm.type)" class="mb-6">
-            <div class="flex justify-between items-center mb-2">
-              <div class="text-sm font-bold text-gray-700">选项设置</div>
-              <el-button type="primary" link size="small" @click="addOption" :disabled="manualForm.options.length >= 8">
-                <el-icon><Plus /></el-icon> 添加选项
-              </el-button>
-            </div>
+        <!-- 3. 动态选项区 (单选/多选) -->
+        <div v-if="[1, 2].includes(manualForm.type)" class="mb-6">
+          <div class="flex justify-between items-center mb-2">
+            <div class="text-sm font-bold text-gray-700">选项设置</div>
+            <el-button type="primary" link size="small" @click="addOption" :disabled="manualForm.options.length >= 8">
+              <el-icon><Plus /></el-icon> 添加选项
+            </el-button>
+          </div>
 
-            <div class="space-y-3">
+          <div class="space-y-3">
+            <div
+                v-for="(opt, idx) in manualForm.options"
+                :key="idx"
+                class="flex items-center gap-3 group"
+                style="display: flex; align-items: center; width: 100%; margin-bottom: 12px;"
+            >
+              <!-- 选项标识 + 正确答案开关 -->
               <div
-                  v-for="(opt, idx) in manualForm.options"
-                  :key="idx"
-                  class="flex items-center gap-3 group"
-                  style="display: flex; align-items: center; width: 100%; margin-bottom: 12px;"
+                  class="flex items-center justify-center rounded-lg border cursor-pointer transition-all shrink-0"
+                  :class="isOptionSelected(idx) ? 'bg-green-100 border-green-500 text-green-700 font-bold' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-400'"
+                  style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;"
+                  @click="toggleOptionAnswer(idx)"
+                  title="点击设为正确答案"
               >
-                <!-- 选项标识 + 正确答案开关 -->
-                <div
-                    class="flex items-center justify-center rounded-lg border cursor-pointer transition-all shrink-0"
-                    :class="isOptionSelected(idx) ? 'bg-green-100 border-green-500 text-green-700 font-bold' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-400'"
-                    style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;"
-                    @click="toggleOptionAnswer(idx)"
-                    title="点击设为正确答案"
-                >
-                  {{ String.fromCharCode(65 + idx) }}
-                  <el-icon v-if="isOptionSelected(idx)" class="ml-1"><Check /></el-icon>
-                </div>
+                {{ String.fromCharCode(65 + idx) }}
+                <el-icon v-if="isOptionSelected(idx)" class="ml-1"><Check /></el-icon>
+              </div>
 
-                <!-- 输入框 -->
-                <el-input
-                    v-model="manualForm.options[idx]"
-                    placeholder="请输入选项内容"
-                    class="flex-1"
-                    style="flex: 1;"
-                />
+              <!-- 输入框 -->
+              <el-input
+                  v-model="manualForm.options[idx]"
+                  placeholder="请输入选项内容"
+                  class="flex-1"
+                  style="flex: 1;"
+              />
 
-                <!-- 删除按钮 -->
-                <el-button
-                    type="danger"
-                    link
-                    icon="Delete"
-                    @click="removeOption(idx)"
-                    :disabled="manualForm.options.length <= 2"
-                    class="shrink-0"
-                    style="margin-left: 8px;"
-                />
+              <!-- 删除按钮 -->
+              <el-button
+                  type="danger"
+                  link
+                  icon="Delete"
+                  @click="removeOption(idx)"
+                  :disabled="manualForm.options.length <= 2"
+                  class="shrink-0"
+                  style="margin-left: 8px;"
+              />
+            </div>
+          </div>
+          <div class="text-xs text-gray-400 mt-2 ml-1">
+            <el-icon><InfoFilled /></el-icon> 点击左侧字母即可将其设为正确答案
+          </div>
+        </div>
+
+        <!-- 4. 参考答案区 (判断/简答/填空) -->
+        <div v-if="![1, 2].includes(manualForm.type)" class="mb-6">
+          <el-form-item label="参考答案" prop="answer">
+            <!-- 判断题：自定义按钮组，修复点击和高亮问题 -->
+            <div v-if="manualForm.type === 3" class="flex gap-4 w-full">
+              <div
+                  class="flex-1 border rounded-lg p-3 cursor-pointer flex items-center justify-center gap-2 transition-colors select-none"
+                  :class="String(manualForm.answer) === '1' ? 'border-green-500 bg-green-50 text-green-700 font-bold' : 'border-gray-200 hover:bg-gray-50'"
+                  @click="selectAnswer('1')"
+              >
+                <el-icon><Check /></el-icon> 正确
+              </div>
+              <div
+                  class="flex-1 border rounded-lg p-3 cursor-pointer flex items-center justify-center gap-2 transition-colors select-none"
+                  :class="String(manualForm.answer) === '0' ? 'border-red-500 bg-red-50 text-red-700 font-bold' : 'border-gray-200 hover:bg-gray-50'"
+                  @click="selectAnswer('0')"
+              >
+                <el-icon><Close /></el-icon> 错误
               </div>
             </div>
-            <div class="text-xs text-gray-400 mt-2 ml-1">
-              <el-icon><InfoFilled /></el-icon> 点击左侧字母即可将其设为正确答案
-            </div>
-          </div>
-        </transition>
 
-        <transition name="el-fade-in">
-          <div v-if="![1, 2].includes(manualForm.type)">
-            <el-form-item label="参考答案" prop="answer">
-              <el-radio-group v-if="manualForm.type === 3" v-model="manualForm.answer" class="w-full">
-                <div class="flex gap-4 w-full">
-                  <div
-                      class="flex-1 border rounded-lg p-3 cursor-pointer flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
-                      :class="manualForm.answer === '1' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200'"
-                      @click="manualForm.answer = '1'"
-                  >
-                    <el-icon><Check /></el-icon> 正确
-                  </div>
-                  <div
-                      class="flex-1 border rounded-lg p-3 cursor-pointer flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
-                      :class="manualForm.answer === '0' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200'"
-                      @click="manualForm.answer = '0'"
-                  >
-                    <el-icon><Close /></el-icon> 错误
-                  </div>
-                </div>
-              </el-radio-group>
-              <el-input
-                  v-else
-                  v-model="manualForm.answer"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="请输入参考答案（填空题多个答案用分号;分隔）"
-              />
-            </el-form-item>
-          </div>
-        </transition>
+            <!-- 简答/填空：文本域 -->
+            <el-input
+                v-else
+                v-model="manualForm.answer"
+                type="textarea"
+                :rows="3"
+                placeholder="请输入参考答案（填空题多个答案用分号;分隔）"
+            />
+          </el-form-item>
+        </div>
 
         <div class="mt-4 pt-4 border-t border-gray-100">
           <el-row :gutter="20">
@@ -763,16 +766,22 @@ const toggleOptionAnswer = (idx: number) => {
   }
 }
 
+// 新增：选择判断题答案
+const selectAnswer = (val: string) => {
+  manualForm.answer = val
+  // 清除校验状态
+  if (manualFormRef.value) {
+    manualFormRef.value.clearValidate('answer')
+  }
+}
+
 const handleManualSubmit = async () => {
   await manualFormRef.value.validate(async (valid: boolean) => {
     if (valid) {
       const payload = { ...manualForm }
 
       if ([1, 2].includes(payload.type)) {
-        // 如果选项是 ["选项1", "选项2"]，不需要在这里加 "A. " 前缀
-        // 建议：存纯内容，展示时加前缀；或者在这里加前缀。
-        // 原逻辑是加了前缀，这里保持原逻辑，但为了避免编辑时重复加，需要判断一下
-        // 为简化，这里假设 manualForm.options 始终是纯内容，提交时格式化
+        // 选项是纯内容，展示时加前缀，提交时不加，保持原样
         const formattedOptions = payload.options.map((opt, i) => `${opt}`)
         payload.options = JSON.stringify(formattedOptions)
       } else {
