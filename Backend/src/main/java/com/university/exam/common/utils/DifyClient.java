@@ -30,7 +30,7 @@ import java.util.Map;
  * 基于 Spring 6 RestClient 实现，支持动态 Key 和日志脱敏
  *
  * @author MySQL数据库架构师
- * @version 1.5.0 (新增文档列表查询)
+ * @version 1.6.0 (新增文本创建文档)
  * @since 2025-12-10
  */
 @Slf4j
@@ -45,7 +45,8 @@ public class DifyClient {
     public static final String KEY_KNOWLEDGE_API_KEY = "dify_key_knowledge";
     public static final String KEY_GENERATION_API_KEY = "dify_key_generation";
     public static final String KEY_GRADING_API_KEY = "dify_key_grading";
-    public static final String KEY_GLOBAL_DATASET_ID = "dify_global_dataset_id";
+    public static final String KEY_GLOBAL_DATASET_ID = "dify_global_dataset_id"; // 课程资料库 ID
+    public static final String KEY_HISTORY_DATASET_ID = "dify_history_dataset_id"; // 新增：历史题库(查重) ID
 
     /**
      * 获取配置好的 RestClient 实例
@@ -78,6 +79,15 @@ public class DifyClient {
 
     public String getGlobalDatasetId() {
         return getConfigValue(KEY_GLOBAL_DATASET_ID);
+    }
+    
+    public String getHistoryDatasetId() {
+        // 如果数据库没配，这里暂时返回 null，业务层需判空
+        try {
+            return getConfigValue(KEY_HISTORY_DATASET_ID);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String getConfigValue(String key) {
@@ -118,8 +128,7 @@ public class DifyClient {
     }
 
     /**
-     * 上传文档到知识库
-     * URL: POST {base_url}/datasets/{dataset_id}/document/create_by_file
+     * 上传文档到知识库 (通过文件)
      */
     public Map uploadDocument(String apiKey, String datasetId, Resource fileResource) {
         if (fileResource == null) {
@@ -129,8 +138,6 @@ public class DifyClient {
         try {
             MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
             parts.add("file", fileResource);
-
-            // Dify 知识库已有预设类型(如文本或QA)，不强制指定 process_rule 以避免冲突
             String dataJson = "{\"indexing_technique\":\"high_quality\",\"process_rule\":{\"mode\":\"automatic\"}}";
             parts.add("data", dataJson);
 
@@ -151,8 +158,35 @@ public class DifyClient {
     }
 
     /**
-     * 获取知识库文档列表 (用于状态同步)
-     * URL: GET {base_url}/datasets/{dataset_id}/documents
+     * 新增：通过文本创建文档 (用于自动同步生成的题目到查重库)
+     * URL: POST {base_url}/datasets/{dataset_id}/document/create_by_text
+     */
+    public void createDocumentByText(String apiKey, String datasetId, String text, String docName) {
+        if (!StringUtils.hasText(text) || !StringUtils.hasText(datasetId)) return;
+
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("name", docName);
+            body.put("text", text);
+            body.put("indexing_technique", "high_quality");
+            body.put("process_rule", Map.of("mode", "automatic"));
+
+            getClient(apiKey).post()
+                    .uri("/datasets/{dataset_id}/document/create_by_text", datasetId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity(); // 不需要返回值
+            
+            log.info("已同步题目到 Dify 查重库: docName={}", docName);
+        } catch (Exception e) {
+            // 同步失败不应阻断主流程，仅记录日志
+            log.warn("同步题目到 Dify 查重库失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 获取知识库文档列表
      */
     public Map getDocumentList(String apiKey, String datasetId, int page, int limit) {
         try {
@@ -166,7 +200,6 @@ public class DifyClient {
                     .body(Map.class);
         } catch (HttpClientErrorException e) {
             log.warn("Dify 获取列表异常: Status={}", e.getStatusCode());
-            // 不抛出异常阻断业务，返回空即可
             return null;
         } catch (Exception e) {
             log.error("Dify 获取文档列表失败", e);
@@ -186,7 +219,6 @@ public class DifyClient {
             log.info("Dify 文档删除成功: datasetId={}, docId={}", datasetId, documentId);
         } catch (HttpClientErrorException e) {
             log.warn("Dify 文档删除异常: {}", e.getMessage());
-            // 删除时如果报 404，可以忽略，视为已删除
             if (e.getStatusCode().value() != 404) {
                 handleHttpClientError(e);
             }
@@ -196,9 +228,6 @@ public class DifyClient {
         }
     }
 
-    /**
-     * 统一处理 Dify API 错误响应
-     */
     private void handleHttpClientError(HttpClientErrorException e) {
         log.error("Dify API Error: Status={}, Body={}", e.getStatusCode(), e.getResponseBodyAsString());
         if (e.getStatusCode().value() == 401) {
@@ -213,9 +242,6 @@ public class DifyClient {
         throw new BizException(e.getStatusCode().value(), "Dify 服务错误: " + e.getStatusText());
     }
 
-    /**
-     * 自定义请求日志拦截器 (实现日志脱敏)
-     */
     private static class DifyRequestLogger implements ClientHttpRequestInterceptor {
         @Override
         public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {

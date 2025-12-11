@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  * 智能出题服务实现类
  *
  * @author MySQL数据库架构师
- * @version 1.5.1 (修复异步调用失效问题)
+ * @version 1.7.0 (同步题目到查重库)
  * @since 2025-12-10
  */
 @Slf4j
@@ -44,25 +44,20 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
     private final UserNoticeService userNoticeService;
     private final CourseService courseService;
 
-    // 关键修复：注入自身代理对象，用于调用 @Async 方法
-    // 使用 @Lazy 避免循环依赖
     @Autowired
     @Lazy
     private QuestionGenerationService self;
 
-    // 单次调用 Dify 的批处理大小
     private static final int BATCH_SIZE = 10;
 
     @Override
-    public Long startGenerationTask(Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId) {
+    public Long startGenerationTask(Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId, String token) {
         String apiKey = difyClient.getGenerationKey();
         if (!StringUtils.hasText(apiKey) || apiKey.contains("******")) {
             throw new BizException(500, "系统未配置有效的 AI 出题 API Key");
         }
 
-        // 初始化任务
         AiTask task = new AiTask();
-        // 任务名称保留中文描述，方便人类阅读
         String typeNameDesc = getTypeNameDesc(types);
         task.setTaskName(String.format("智能出题-%s-%s", typeNameDesc, topic));
         task.setType((byte) 1);
@@ -76,10 +71,8 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
         aiTaskService.save(task);
 
-        // 关键修复：使用 self 代理对象调用异步方法，确保 @Async 生效
-        // 这样主线程会立即返回，不会等待 processGenerationAsync 执行完毕
         self.processGenerationAsync(
-                task.getId(), courseId, topic, totalCount, difficulty, types, userId, apiKey
+                task.getId(), courseId, topic, totalCount, difficulty, types, userId, apiKey, token
         );
 
         return task.getId();
@@ -87,32 +80,33 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     @Override
     @Async("aiTaskExecutor")
-    public void processGenerationAsync(Long taskId, Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId, String apiKey) {
-        log.info(">>> 开始执行异步出题: taskId={}, topic={}, types={}", taskId, topic, types);
+    public void processGenerationAsync(Long taskId, Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId, String apiKey, String token) {
+        log.info(">>> 开始执行异步出题: taskId={}, topic={}", taskId, topic);
 
         Course course = courseService.getById(courseId);
         String courseName = (course != null) ? course.getCourseName() : "";
-
-        // 修改点：直接将 List<Integer> 转为 "1,2,3" 格式的字符串传给 Dify
         String questionTypeParam = getTypeIdsString(types);
 
         int generatedCount = 0;
         int failedAttempts = 0;
 
+        // 获取查重库配置 (注意：我们复用 KnowledgeKey 来操作查重库，或者你需要单独配置一个 Key)
+        // 假设这里复用 KnowledgeKey，因为它有 Dataset 操作权限
+        String knowledgeApiKey = difyClient.getKnowledgeKey();
+        String historyDatasetId = difyClient.getHistoryDatasetId(); // 需要先在配置表添加 dify_history_dataset_id
+
         try {
             while (generatedCount < totalCount && failedAttempts < 3) {
                 int currentBatchNeed = Math.min(BATCH_SIZE, totalCount - generatedCount);
 
-                // 1. Dify 输入参数
                 Map<String, Object> inputs = new HashMap<>();
                 inputs.put("topic", topic);
                 inputs.put("count", currentBatchNeed);
                 inputs.put("difficulty", difficulty);
                 inputs.put("course_name", courseName);
-                // 传入 "1,2,3" 格式的字符串
                 inputs.put("types", questionTypeParam);
+                if (StringUtils.hasText(token)) inputs.put("user_token", token);
 
-                // 2. 调用 Dify
                 Map<String, Object> result = null;
                 try {
                     result = difyClient.runWorkflow(apiKey, inputs, userId.toString());
@@ -123,7 +117,6 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                     continue;
                 }
 
-                // 3. 解析结果
                 boolean batchSuccess = false;
                 if (result != null && result.containsKey("data")) {
                     Map data = (Map) result.get("data");
@@ -140,20 +133,19 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                             try {
                                 JSONArray questionsJson = JSONUtil.parseArray(jsonStr);
                                 List<Question> validQuestions = new ArrayList<>();
+                                StringBuilder syncText = new StringBuilder(); // 用于同步到查重库的文本
 
                                 for (Object q : questionsJson) {
                                     JSONObject qJson = (JSONObject) q;
                                     String content = qJson.getStr("content");
                                     if (StrUtil.isBlank(content)) continue;
 
-                                    // 查重
                                     String contentHash = DigestUtil.md5Hex(content);
                                     long exists = questionService.count(new LambdaQueryWrapper<Question>()
                                             .eq(Question::getContentHash, contentHash));
 
                                     if (exists > 0) continue;
 
-                                    // 入库
                                     Question question = new Question();
                                     question.setCourseId(courseId);
                                     question.setType(parseType(qJson.getStr("type")));
@@ -170,6 +162,9 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                                     question.setUpdateTime(LocalDateTime.now());
 
                                     validQuestions.add(question);
+                                    
+                                    // 收集新题干，准备同步
+                                    syncText.append(content).append("\n\n");
                                 }
 
                                 if (!validQuestions.isEmpty()) {
@@ -177,6 +172,16 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                                     generatedCount += validQuestions.size();
                                     batchSuccess = true;
                                     updateTaskProgress(taskId, generatedCount, totalCount, (byte) 1, null);
+
+                                    // 核心修改：同步到 Dify 查重库
+                                    if (StringUtils.hasText(historyDatasetId) && syncText.length() > 0) {
+                                        difyClient.createDocumentByText(
+                                                knowledgeApiKey, // 使用有知识库写权限的 Key
+                                                historyDatasetId,
+                                                syncText.toString(),
+                                                "自动入库_" + taskId + "_" + System.currentTimeMillis()
+                                        );
+                                    }
                                 }
                             } catch (Exception e) {
                                 log.error("解析 JSON 失败", e);
@@ -196,7 +201,6 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                 }
             }
 
-            // 任务结束
             if (generatedCount == 0) {
                 updateTaskProgress(taskId, 0, totalCount, (byte) 3, "未能生成有效题目");
                 sendNotification(userId, "AI 出题失败", "任务 [" + topic + "] 执行失败。");
@@ -211,6 +215,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         }
     }
 
+    // ... (其他辅助方法保持不变)
     private void updateTaskProgress(Long taskId, int current, int total, byte status, String errorMsg) {
         AiTask update = new AiTask();
         update.setId(taskId);
@@ -254,13 +259,11 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         return jsonStr.trim();
     }
 
-    // 新增：将类型ID列表转换为 "1,2,3" 格式的字符串，传给 Dify
     private String getTypeIdsString(List<Integer> types) {
-        if (types == null || types.isEmpty()) return ""; // 空则表示随机/全部
+        if (types == null || types.isEmpty()) return "";
         return types.stream().map(String::valueOf).collect(Collectors.joining(","));
     }
 
-    // 辅助方法：保留这个用于生成易读的任务名称 (Task Name)
     private String getTypeNameDesc(List<Integer> types) {
         if (types == null || types.isEmpty()) return "混合题型";
         return types.stream().map(this::getTypeName).collect(Collectors.joining("、"));
@@ -279,15 +282,12 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     private Byte parseType(String typeStr) {
         if (typeStr == null) return 1;
-        // 兼容数字字符串 "1", "2" 等
         try {
             int typeInt = Integer.parseInt(typeStr);
             if (typeInt >= 1 && typeInt <= 5) return (byte) typeInt;
         } catch (NumberFormatException e) {
             // ignore
         }
-
-        // 兼容文本描述
         if (typeStr.contains("填空") || "gap_filling".equalsIgnoreCase(typeStr)) return 5;
         if (typeStr.contains("单选") || "choice".equalsIgnoreCase(typeStr)) return 1;
         if (typeStr.contains("多选") || "multiple".equalsIgnoreCase(typeStr)) return 2;

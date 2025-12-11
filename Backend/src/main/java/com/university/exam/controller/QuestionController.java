@@ -15,6 +15,7 @@ import com.university.exam.service.AiTaskService;
 import com.university.exam.service.CourseUserService;
 import com.university.exam.service.QuestionGenerationService;
 import com.university.exam.service.QuestionService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +39,7 @@ import java.util.stream.Collectors;
  * 题库管理控制器
  *
  * @author MySQL数据库架构师
- * @version 1.4.0 (优化模板格式)
+ * @version 1.5.0 (传递Token)
  * @since 2025-12-10
  */
 @Slf4j
@@ -54,10 +55,6 @@ public class QuestionController {
 
     // ==================== 导入导出相关 ====================
 
-    /**
-     * 下载题目导入模板
-     * GET /api/question/template
-     */
     @GetMapping("/question/template")
     public void downloadTemplate(HttpServletResponse response) throws IOException {
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -65,48 +62,47 @@ public class QuestionController {
         String fileName = URLEncoder.encode("题目导入模板", StandardCharsets.UTF_8).replaceAll("\\+", "%20");
         response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
 
-        // 创建更友好的示例数据
         List<QuestionExcelDto> list = new ArrayList<>();
         
-        // 示例1：单选题 (使用 | 分隔选项，使用字母作为答案)
+        // 示例1：单选题
         QuestionExcelDto q1 = new QuestionExcelDto();
         q1.setContent("Java中int类型占用几个字节？");
-        q1.setType(1); // 1-单选
-        q1.setDifficulty(1); // 1-简单
-        q1.setOptions("2个 | 4个 | 8个 | 16个"); // 用户友好格式
-        q1.setAnswer("B"); // 对应第二个选项 "4个"
+        q1.setType(1);
+        q1.setDifficulty(1);
+        q1.setOptions("2个 | 4个 | 8个 | 16个");
+        q1.setAnswer("B");
         q1.setAnalysis("Java中int类型固定占用4个字节。");
-        q1.setTags("Java基础, 数据类型"); // 逗号分隔
+        q1.setTags("Java基础, 数据类型");
         list.add(q1);
 
-        // 示例2：多选题 (使用字母组合)
+        // 示例2：多选题
         QuestionExcelDto q2 = new QuestionExcelDto();
         q2.setContent("以下哪些是Java的集合类？");
-        q2.setType(2); // 2-多选
-        q2.setDifficulty(2); // 2-中等
+        q2.setType(2);
+        q2.setDifficulty(2);
         q2.setOptions("ArrayList | HashMap | String | HashSet");
-        q2.setAnswer("A,B,D"); // 对应 ArrayList, HashMap, HashSet
+        q2.setAnswer("A,B,D");
         q2.setAnalysis("String不是集合类。");
         q2.setTags("Java集合");
         list.add(q2);
 
-        // 示例3：判断题 (直接写正确/错误)
+        // 示例3：判断题
         QuestionExcelDto q3 = new QuestionExcelDto();
         q3.setContent("Java支持多重继承。");
-        q3.setType(3); // 3-判断
+        q3.setType(3);
         q3.setDifficulty(1);
-        q3.setOptions(""); // 判断题无需填写选项
+        q3.setOptions("");
         q3.setAnswer("错误");
         q3.setAnalysis("Java类不支持多重继承，接口支持。");
         list.add(q3);
         
-        // 示例4：填空题 (增加多空示例)
+        // 示例4：填空题
         QuestionExcelDto q4 = new QuestionExcelDto();
         q4.setContent("Java的创始人是____，他在____年发布了Java语言。");
-        q4.setType(5); // 5-填空
+        q4.setType(5);
         q4.setDifficulty(1);
         q4.setOptions("");
-        q4.setAnswer("James Gosling | 1995"); // 多个空用 | 分隔
+        q4.setAnswer("James Gosling | 1995");
         q4.setAnalysis("1995年5月23日，Java语言诞生。");
         q4.setTags("历史");
         list.add(q4);
@@ -116,10 +112,6 @@ public class QuestionController {
                 .doWrite(list);
     }
 
-    /**
-     * Excel 导入
-     * POST /api/question/import
-     */
     @PostMapping("/question/import")
     @PreAuthorize("hasAnyRole(2, 3)")
     public Result<?> importQuestions(@RequestParam("file") MultipartFile file,
@@ -129,17 +121,22 @@ public class QuestionController {
         return Result.success("导入处理完成");
     }
 
-    // ... (其他代码保持不变)
-    
     // ==================== AI 生成相关 ====================
 
     @PostMapping("/question/ai-generate")
     @PreAuthorize("hasAnyRole(2, 3)")
-    public Result<?> startAiGeneration(@RequestBody AiGenerateRequest req) {
+    public Result<?> startAiGeneration(@RequestBody AiGenerateRequest req, HttpServletRequest request) {
         Long userId = getCurrentUserId();
+        
+        // 获取当前请求的 Token
+        String token = request.getHeader("Authorization");
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
         Long taskId = generationService.startGenerationTask(
                 req.getCourseId(), req.getTopic(), req.getTotalCount(),
-                req.getDifficulty(), req.getTypes(), userId
+                req.getDifficulty(), req.getTypes(), userId, token
         );
         return Result.success(Map.of("taskId", taskId), "AI 出题任务已启动");
     }
@@ -253,7 +250,9 @@ public class QuestionController {
 
     @PostMapping("/internal/question/check-duplicate")
     public Result<?> checkDuplicateInternal(@RequestBody Map<String, String> payload) {
-        return Result.success(Map.of("is_duplicate", questionService.checkDuplicate(payload.get("content"))));
+        String content = payload.get("content");
+        boolean isDuplicate = questionService.checkDuplicate(content);
+        return Result.success(Map.of("is_duplicate", isDuplicate));
     }
 
     @Data

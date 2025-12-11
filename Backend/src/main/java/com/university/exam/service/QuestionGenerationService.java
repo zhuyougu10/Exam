@@ -6,7 +6,7 @@ import java.util.List;
  * 智能出题服务接口
  *
  * @author MySQL数据库架构师
- * @version 1.2.0 (支持多选类型)
+ * @version 1.3.0 (支持传输用户Token)
  * @since 2025-12-10
  */
 public interface QuestionGenerationService {
@@ -20,12 +20,13 @@ public interface QuestionGenerationService {
      * @param difficulty 难度 (1-简单, 2-中等, 3-困难)
      * @param types      题目类型列表 (1-单选, 2-多选, 3-判断, 4-简答, 5-填空)
      * @param userId     操作用户ID
+     * @param token      当前用户的认证Token (用于Dify回调)
      * @return 任务ID (sys_ai_task表的主键)
      */
-    Long startGenerationTask(Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId);
+    Long startGenerationTask(Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId, String token);
 
     /**
      * 实际执行异步生成逻辑的方法
      */
-    void processGenerationAsync(Long taskId, Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId, String apiKey);
+    void processGenerationAsync(Long taskId, Long courseId, String topic, int totalCount, String difficulty, List<Integer> types, Long userId, String apiKey, String token);
 }
