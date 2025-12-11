@@ -5,6 +5,7 @@ import router from '@/router'
 
 // 自定义 Axios 实例类型
 interface CustomAxiosInstance extends AxiosInstance {
+  // 覆盖请求方法类型，使其返回数据而不是 AxiosResponse
   get<T>(url: string, config?: InternalAxiosRequestConfig): Promise<T>
   post<T>(url: string, data?: any, config?: InternalAxiosRequestConfig): Promise<T>
   put<T>(url: string, data?: any, config?: InternalAxiosRequestConfig): Promise<T>
@@ -14,7 +15,7 @@ interface CustomAxiosInstance extends AxiosInstance {
 // 创建 Axios 实例
 const service: CustomAxiosInstance = axios.create({
   baseURL: '/api', // API 基础路径
-  timeout: 30000, // 请求超时时间 (下载文件可能需要更长时间)
+  timeout: 15000, // 请求超时时间
   headers: {
     'Content-Type': 'application/json;charset=utf-8'
   }
@@ -26,12 +27,15 @@ service.interceptors.request.use(
       // 从 localStorage 获取 token
       const token = localStorage.getItem('token')
       if (token) {
+        // 添加 Authorization 头
         config.headers.Authorization = `Bearer ${token}`
       }
       return config
     },
     (error: any) => {
-      ElMessage.error('请求出错，请稍后重试')
+      // 处理请求错误
+      // 请求并未发出，通常是配置错误，可以提示
+      console.error('Request Error:', error)
       return Promise.reject(error)
     }
 )
@@ -39,68 +43,75 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
     (response: AxiosResponse) => {
-      // 特殊处理：如果是下载文件 (blob)，直接返回 data
-      if (response.config.responseType === 'blob' || response.headers['content-type']?.includes('application/vnd.ms-excel') || response.headers['content-type']?.includes('application/vnd.openxmlformats-officedocument')) {
-        return response.data
-      }
+      // 解构响应数据
+      // 兼容后端返回字段: code/msg 或 code/message
+      const res = response.data
+      const code = res.code
+      const msg = res.msg || res.message || '操作失败'
 
-      // 常规 JSON 响应处理
-      const { code, message, data } = response.data
-
+      // 检查响应状态码
       if (code === 200) {
-        return data
+        // 成功响应，直接返回 data
+        return res.data
       } else {
-        ElMessage.error(message || '操作失败')
-        return Promise.reject(new Error(message || '操作失败'))
+        // 业务错误，显示详细错误信息
+        // 后端业务异常通常返回非200状态码，这里统一弹窗
+        ElMessage.error(msg)
+        // 返回带有具体错误信息的 Error 对象，方便组件层获取 msg
+        return Promise.reject(new Error(msg))
       }
     },
     (error: any) => {
-      if (error.response) {
-        const { status, data } = error.response
+      // 处理网络错误或 HTTP 状态码错误
+      let message = '系统未知错误'
 
-        // 如果是 blob 类型请求出错，data 是 blob，需要转为 json 读取错误信息
-        if (error.config && error.config.responseType === 'blob') {
-          const reader = new FileReader()
-          reader.onload = () => {
-            try {
-              const errorMsg = JSON.parse(reader.result as string)
-              ElMessage.error(errorMsg.message || '下载失败')
-            } catch (e) {
-              ElMessage.error('下载失败')
-            }
-          }
-          reader.readAsText(data)
-          return Promise.reject(error)
-        }
+      if (error.response) {
+        // HTTP 错误状态码处理
+        const { status, data } = error.response
+        // 优先使用后端返回的错误消息
+        const errorMsg = data?.msg || data?.message
 
         switch (status) {
+          case 400:
+            message = errorMsg || '请求参数错误'
+            break
           case 401:
+            // 未授权，清除 token 并跳转到登录页
             localStorage.removeItem('token')
-            ElMessage.error('登录已过期，请重新登录')
-            router.push({
-              path: '/login',
-              query: { redirect: router.currentRoute.value.fullPath }
-            })
+            message = errorMsg || '登录已过期，请重新登录'
+            // 避免重复跳转
+            if (router.currentRoute.value.path !== '/login') {
+              router.push({
+                path: '/login',
+                query: { redirect: router.currentRoute.value.fullPath }
+              })
+            }
             break
           case 403:
-            ElMessage.error(data?.message || '没有操作权限')
+            message = errorMsg || '没有操作权限'
             break
           case 404:
-            ElMessage.error(data?.message || '请求的资源不存在')
+            message = errorMsg || '请求的资源不存在'
             break
           case 500:
-            ElMessage.error(data?.message || '服务器内部错误')
+            message = errorMsg || '服务器内部错误'
             break
           default:
-            ElMessage.error(data?.message || `请求错误（${status}）`)
+            message = errorMsg || `请求错误（${status}）`
         }
       } else if (error.request) {
-        ElMessage.error('网络异常，请检查网络连接')
+        // 请求已发出，但没有收到响应
+        message = '网络异常，请检查网络连接'
       } else {
-        ElMessage.error('请求配置错误')
+        // 请求配置错误
+        message = '请求配置错误'
       }
 
-      return Promise.reject(error)
+      // 统一弹出错误提示
+      ElMessage.error(message)
+
+      // 将错误继续抛出，以便组件处理 loading 状态等
+      return Promise.reject(new Error(message))
     }
 )
 

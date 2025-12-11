@@ -680,5 +680,48 @@ AI 智能出题向导：
 
 smart-exam-web/src/views/teacher/QuestionBank.vue
 
+阶段 3.1：组卷与发布后端接口
+
+完成状态
+
+✅ 已完成
+
+实现说明
+
+组卷引擎 (PaperService):
+
+实现了 randomCreate 接口：支持按题目类型、数量配置规则，结合 ORDER BY RAND() 进行随机抽题，自动计算总分并生成 Paper 及 PaperQuestion 关联数据。
+
+实现了 manualCreate 接口：支持接收前端选定的一组题目ID及分值，直接生成试卷。
+
+发布管理 (PublishService):
+
+实现了 publishExam 接口：创建考试场次记录，自动根据当前时间判断状态（未开始/进行中）。
+
+集成了通知系统：考试发布成功后，异步调用 NoticeService 生成通知，并向目标班级（部门）下的所有学生发送站内信。
+
+控制器 (Controller):
+
+PaperController: 提供了组卷、列表查询（带权限控制）、删除（带发布状态检查）接口。
+
+ExamPublishController: 提供了考试发布、撤销发布、列表查询接口。
+
+扩展功能:
+
+QuestionService: 增加了 getRandomQuestions 方法，支撑智能组卷逻辑。
+
+生成的关键文件
+
+Backend/src/main/java/com/university/exam/controller/PaperController.java
+
+Backend/src/main/java/com/university/exam/controller/ExamPublishController.java
+
+Backend/src/main/java/com/university/exam/service/impl/PaperServiceImpl.java
+
+Backend/src/main/java/com/university/exam/service/impl/PublishServiceImpl.java
+
+更新日期：2025-12-11
+更新人员：MySQL数据库架构师
+
 更新日期：2025-12-10
 更新人员：MySQL数据库架构师

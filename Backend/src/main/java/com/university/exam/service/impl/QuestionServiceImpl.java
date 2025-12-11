@@ -3,6 +3,7 @@ package com.university.exam.service.impl;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.alibaba.excel.EasyExcel;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.university.exam.common.dto.QuestionExcelDto;
 import com.university.exam.common.exception.BizException;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * <p>
@@ -53,5 +55,15 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         long count = this.count(new LambdaQueryWrapper<Question>()
                 .eq(Question::getContentHash, hash));
         return count > 0;
+    }
+
+    @Override
+    public List<Question> getRandomQuestions(Long courseId, Integer type, Integer count) {
+        // 使用 MySQL 的 ORDER BY RAND() 进行随机抽取
+        // 注意：在大数据量下可能有性能问题，但在校级考试系统规模下通常可以接受
+        return this.list(new QueryWrapper<Question>()
+                .eq("course_id", courseId)
+                .eq("type", type)
+                .last("ORDER BY RAND() LIMIT " + count));
     }
 }

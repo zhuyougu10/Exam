@@ -1,0 +1,126 @@
+package com.university.exam.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.university.exam.common.exception.BizException;
+import com.university.exam.common.result.Result;
+import com.university.exam.entity.CourseUser;
+import com.university.exam.entity.Paper;
+import com.university.exam.entity.Publish;
+import com.university.exam.service.CourseUserService;
+import com.university.exam.service.PaperService;
+import com.university.exam.service.PublishService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * 考试发布管理控制器
+ *
+ * @author MySQL数据库架构师
+ * @version 1.0.0
+ * @since 2025-12-11
+ */
+@RestController
+@RequestMapping("/api/exam/publish")
+@RequiredArgsConstructor
+public class ExamPublishController {
+
+    private final PublishService publishService;
+    private final PaperService paperService;
+    private final CourseUserService courseUserService;
+
+    /**
+     * 发布考试
+     * POST /api/exam/publish
+     */
+    @PostMapping
+    @PreAuthorize("hasAnyRole(2, 3)")
+    public Result<?> publish(@RequestBody PublishService.PublishRequest request) {
+        Long userId = getCurrentUserId();
+        
+        // 校验试卷权限
+        Paper paper = paperService.getById(request.getPaperId());
+        if (paper == null) throw new BizException(404, "试卷不存在");
+        
+        // 教师只能发布自己课程的试卷
+        if (getCurrentUserRole() == 2) {
+            // 校验是否有该课程权限
+            long count = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
+                    .eq(CourseUser::getUserId, userId)
+                    .eq(CourseUser::getCourseId, paper.getCourseId())
+                    .eq(CourseUser::getRole, 2));
+            if (count == 0 && !paper.getCreateBy().equals(userId)) {
+                throw new BizException(403, "无权发布该试卷");
+            }
+        }
+
+        Long publishId = publishService.publishExam(request, userId);
+        return Result.success(Map.of("id", publishId), "考试发布成功，已通知相关学生");
+    }
+
+    /**
+     * 获取发布列表
+     * GET /api/exam/publish/list
+     */
+    @GetMapping("/list")
+    public Result<?> getList(@RequestParam(defaultValue = "1") Integer page,
+                             @RequestParam(defaultValue = "10") Integer size,
+                             @RequestParam(required = false) Long paperId) {
+        Long userId = getCurrentUserId();
+        Integer role = getCurrentUserRole();
+
+        LambdaQueryWrapper<Publish> query = new LambdaQueryWrapper<>();
+        if (paperId != null) {
+            query.eq(Publish::getPaperId, paperId);
+        }
+
+        // 教师只能看自己发布的
+        if (role == 2) {
+            query.eq(Publish::getCreateBy, userId);
+        }
+
+        query.orderByDesc(Publish::getCreateTime);
+        IPage<Publish> result = publishService.page(new Page<>(page, size), query);
+        return Result.success(result);
+    }
+
+    /**
+     * 删除/撤销发布
+     * DELETE /api/exam/publish/{id}
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole(2, 3)")
+    public Result<?> delete(@PathVariable Long id) {
+        Publish publish = publishService.getById(id);
+        if (publish == null) throw new BizException(404, "发布记录不存在");
+
+        Long userId = getCurrentUserId();
+        if (getCurrentUserRole() == 2 && !publish.getCreateBy().equals(userId)) {
+            throw new BizException(403, "无权操作");
+        }
+
+        // 逻辑删除
+        publish.setUpdateBy(userId);
+        publish.setUpdateTime(LocalDateTime.now());
+        publishService.removeById(id);
+
+        return Result.success("撤销成功");
+    }
+
+    private Long getCurrentUserId() {
+        return (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    private Integer getCurrentUserRole() {
+        return (Integer) SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .findFirst().get().getAuthority().replace("ROLE_", "").transform(Integer::parseInt);
+    }
+}

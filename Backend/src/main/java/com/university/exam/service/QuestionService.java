@@ -32,15 +32,14 @@ public interface QuestionService extends IService<Question> {
      * @return true-重复, false-不重复
      */
     boolean checkDuplicate(String content);
-    
+
     /**
-     * 根据权限获取题目列表查询条件
-     * @param userId 用户ID
-     * @param role 用户角色
-     * @param courseId 课程ID (可选筛选)
+     * 随机抽取指定数量和类型的题目
+     *
+     * @param courseId 课程ID
+     * @param type     题目类型
+     * @param count    数量
      * @return 题目列表
      */
-    // 注意：如果是分页查询，通常在Controller层组装Wrapper，
-    // 但为了权限封装，可以在这里提供一个辅助方法或直接在Controller处理。
-    // 这里保持简单，逻辑主要写在Controller或通过Wrapper传递。
+    List<Question> getRandomQuestions(Long courseId, Integer type, Integer count);
 }
