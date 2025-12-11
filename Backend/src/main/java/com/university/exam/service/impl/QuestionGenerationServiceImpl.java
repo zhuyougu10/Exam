@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  * 智能出题服务实现类
  *
  * @author MySQL数据库架构师
- * @version 1.7.0 (同步题目到查重库)
+ * @version 1.8.0 (增加调试日志)
  * @since 2025-12-10
  */
 @Slf4j
@@ -90,10 +90,8 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         int generatedCount = 0;
         int failedAttempts = 0;
 
-        // 获取查重库配置 (注意：我们复用 KnowledgeKey 来操作查重库，或者你需要单独配置一个 Key)
-        // 假设这里复用 KnowledgeKey，因为它有 Dataset 操作权限
         String knowledgeApiKey = difyClient.getKnowledgeKey();
-        String historyDatasetId = difyClient.getHistoryDatasetId(); // 需要先在配置表添加 dify_history_dataset_id
+        String historyDatasetId = difyClient.getHistoryDatasetId();
 
         try {
             while (generatedCount < totalCount && failedAttempts < 3) {
@@ -105,11 +103,15 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                 inputs.put("difficulty", difficulty);
                 inputs.put("course_name", courseName);
                 inputs.put("types", questionTypeParam);
-                if (StringUtils.hasText(token)) inputs.put("user_token", token);
+                if (StringUtils.hasText(token)) {
+                    inputs.put("user_token", token);
+                }
 
                 Map<String, Object> result = null;
                 try {
                     result = difyClient.runWorkflow(apiKey, inputs, userId.toString());
+                    // --- 增加调试日志 ---
+                    log.info("Dify 原始响应: {}", JSONUtil.toJsonStr(result));
                 } catch (Exception e) {
                     log.error("Dify 调用异常", e);
                     failedAttempts++;
@@ -123,35 +125,52 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                     Map outputs = (Map) data.get("outputs");
 
                     if (outputs != null) {
-                        Object outputObj = outputs.get("result");
-                        if (outputObj == null) outputObj = outputs.get("text");
+                        // 优先尝试获取 'text' 字段 (通常是 LLM 节点的直接输出)
+                        Object outputObj = outputs.get("text");
+                        // 如果 'text' 为空，尝试获取 'result' (可能是某些 Workflow 的结束节点变量名)
+                        if (outputObj == null) outputObj = outputs.get("result");
+
+                        // --- 增加调试日志 ---
+                        log.info("Dify outputs 提取结果: {}", outputObj);
 
                         if (outputObj != null) {
                             String jsonStr = outputObj instanceof String ? (String) outputObj : JSONUtil.toJsonStr(outputObj);
                             jsonStr = cleanJsonString(jsonStr);
 
+                            // --- 增加调试日志 ---
+                            log.info("清洗后的 JSON 字符串: {}", jsonStr);
+
                             try {
                                 JSONArray questionsJson = JSONUtil.parseArray(jsonStr);
                                 List<Question> validQuestions = new ArrayList<>();
-                                StringBuilder syncText = new StringBuilder(); // 用于同步到查重库的文本
+                                StringBuilder syncText = new StringBuilder();
 
                                 for (Object q : questionsJson) {
                                     JSONObject qJson = (JSONObject) q;
                                     String content = qJson.getStr("content");
-                                    if (StrUtil.isBlank(content)) continue;
+                                    if (StrUtil.isBlank(content)) {
+                                        log.warn("跳过无效题目: content 为空");
+                                        continue;
+                                    }
 
                                     String contentHash = DigestUtil.md5Hex(content);
                                     long exists = questionService.count(new LambdaQueryWrapper<Question>()
                                             .eq(Question::getContentHash, contentHash));
 
-                                    if (exists > 0) continue;
+                                    if (exists > 0) {
+                                        log.warn("跳过重复题目: {}", content);
+                                        continue;
+                                    }
 
                                     Question question = new Question();
                                     question.setCourseId(courseId);
                                     question.setType(parseType(qJson.getStr("type")));
                                     question.setContent(content);
                                     question.setContentHash(contentHash);
-                                    question.setOptions(JSONUtil.toJsonStr(qJson.getJSONArray("options")));
+                                    // 容错处理：Dify 可能返回空数组或 null
+                                    JSONArray optionsArr = qJson.getJSONArray("options");
+                                    question.setOptions(optionsArr != null ? JSONUtil.toJsonStr(optionsArr) : "[]");
+
                                     question.setAnswer(qJson.getStr("answer"));
                                     question.setAnalysis(qJson.getStr("analysis"));
                                     question.setDifficulty(parseDifficulty(difficulty));
@@ -162,8 +181,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                                     question.setUpdateTime(LocalDateTime.now());
 
                                     validQuestions.add(question);
-                                    
-                                    // 收集新题干，准备同步
+
                                     syncText.append(content).append("\n\n");
                                 }
 
@@ -173,22 +191,29 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                                     batchSuccess = true;
                                     updateTaskProgress(taskId, generatedCount, totalCount, (byte) 1, null);
 
-                                    // 核心修改：同步到 Dify 查重库
                                     if (StringUtils.hasText(historyDatasetId) && syncText.length() > 0) {
                                         difyClient.createDocumentByText(
-                                                knowledgeApiKey, // 使用有知识库写权限的 Key
+                                                knowledgeApiKey,
                                                 historyDatasetId,
                                                 syncText.toString(),
-                                                "自动入库_" + taskId + "_" + System.currentTimeMillis()
+                                                "AutoSync_" + taskId + "_" + System.currentTimeMillis()
                                         );
                                     }
+                                } else {
+                                    log.warn("Dify 返回了数据，但有效题目列表为空 (可能是所有题目均重复或格式错误)");
                                 }
                             } catch (Exception e) {
                                 log.error("解析 JSON 失败", e);
                                 failedAttempts++;
                             }
+                        } else {
+                            log.warn("Dify outputs 中未找到 'text' 或 'result' 字段");
                         }
+                    } else {
+                        log.warn("Dify 响应数据中 'outputs' 为空");
                     }
+                } else {
+                    log.warn("Dify 响应数据中 'data' 为空");
                 }
 
                 if (!batchSuccess) failedAttempts++; else failedAttempts = 0;
@@ -215,7 +240,6 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         }
     }
 
-    // ... (其他辅助方法保持不变)
     private void updateTaskProgress(Long taskId, int current, int total, byte status, String errorMsg) {
         AiTask update = new AiTask();
         update.setId(taskId);
@@ -253,8 +277,10 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
     private String cleanJsonString(String jsonStr) {
         if (StrUtil.isBlank(jsonStr)) return "";
         jsonStr = jsonStr.trim();
-        if (jsonStr.startsWith("```json")) jsonStr = jsonStr.substring(7);
-        if (jsonStr.startsWith("```")) jsonStr = jsonStr.substring(3);
+        // 增加对 "```json" 的容错处理（不区分大小写）
+        if (jsonStr.toLowerCase().startsWith("```json")) jsonStr = jsonStr.substring(7);
+        else if (jsonStr.startsWith("```")) jsonStr = jsonStr.substring(3);
+
         if (jsonStr.endsWith("```")) jsonStr = jsonStr.substring(0, jsonStr.length() - 3);
         return jsonStr.trim();
     }
