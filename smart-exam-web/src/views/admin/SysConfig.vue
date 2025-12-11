@@ -24,7 +24,8 @@
         <!-- 分组：Dify AI 配置 -->
         <el-card shadow="never" class="border-0 rounded-xl overflow-visible">
           <template #header>
-            <div class="flex items-center gap-2 border-l-4 border-indigo-500 pl-3">
+            <!-- 修复：添加 style 指定边框颜色，防止显示为黑条 -->
+            <div class="flex items-center gap-2 border-l-4 pl-3" style="border-color: #6366f1">
               <span class="font-bold text-gray-700">Dify AI 服务配置</span>
               <el-tag size="small" type="info">核心</el-tag>
             </div>
@@ -70,7 +71,8 @@
 
         <!-- 操作按钮 -->
         <div class="flex justify-end pt-4 sticky bottom-6 z-10">
-          <div class="bg-white/90 backdrop-blur px-6 py-3 rounded-full shadow-lg border border-gray-100 flex gap-4">
+          <!-- 修复：添加 style 指定边框颜色，防止显示为黑框 -->
+          <div class="bg-white/90 backdrop-blur px-6 py-3 rounded-full shadow-lg border flex gap-4" style="border-color: #e5e7eb">
             <el-button @click="fetchConfig" :icon="Refresh">重置更改</el-button>
             <el-button type="primary" color="#6366f1" @click="handleSubmit" :loading="submitLoading" :icon="Check">
               保存配置
