@@ -183,7 +183,8 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                     }
                 }
 
-                if (!batchSuccess) failedAttempts++; else failedAttempts = 0;
+                if (!batchSuccess) failedAttempts++;
+                else failedAttempts = 0;
 
                 try {
                     Thread.sleep(2000);
@@ -265,12 +266,18 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     private String getTypeName(Integer type) {
         switch (type) {
-            case 1: return "单选";
-            case 2: return "多选";
-            case 3: return "判断";
-            case 4: return "简答";
-            case 5: return "填空";
-            default: return "未知";
+            case 1:
+                return "单选";
+            case 2:
+                return "多选";
+            case 3:
+                return "判断";
+            case 4:
+                return "简答";
+            case 5:
+                return "填空";
+            default:
+                return "未知";
         }
     }
 

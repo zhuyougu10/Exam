@@ -2,22 +2,16 @@
   <div class="app-container p-6 bg-gray-50 min-h-screen">
     <div class="max-w-7xl mx-auto space-y-6">
 
-      <!-- 顶部工具栏 (UI 修复版) -->
+      <!-- 顶部工具栏 -->
       <el-card shadow="never" class="border-0 rounded-xl">
         <div class="flex flex-wrap justify-between items-center gap-4">
 
-          <!-- 左侧筛选区：分离图标与表单，使用标准宽度 -->
+          <!-- 左侧筛选区 -->
           <div class="flex flex-wrap items-center gap-2">
-            <!-- 装饰图标 -->
             <div class="hidden md:flex p-2 bg-indigo-100 rounded-lg text-indigo-600 mr-2 shrink-0">
               <el-icon size="20"><Collection /></el-icon>
             </div>
 
-            <!--
-              修复重点：
-              1. 移除 el-form 上的 flex 类，让 inline 模式自然生效
-              2. 使用 style="width: xxx" 替代 Tailwind 类，防止被压缩
-            -->
             <el-form :inline="true" :model="queryParams" class="!m-0">
               <el-form-item class="!mb-0 !mr-3">
                 <el-select
@@ -66,7 +60,7 @@
             </el-form>
           </div>
 
-          <!-- 右侧按钮组：固定靠右 -->
+          <!-- 右侧按钮组 -->
           <div class="flex items-center gap-3 shrink-0">
             <el-button type="warning" plain icon="Upload" @click="openImportDialog">
               批量导入
@@ -258,7 +252,7 @@
       </template>
     </el-dialog>
 
-    <!-- 弹窗 2: Excel 批量导入 (新增) -->
+    <!-- 弹窗 2: Excel 批量导入 -->
     <el-dialog v-model="importDialog.visible" title="Excel 批量导入题目" width="500px">
       <el-form label-position="top">
         <el-form-item label="导入到课程" required>
@@ -374,7 +368,6 @@
           />
         </el-form-item>
 
-        <!-- 新增: 题目图片支持 -->
         <el-form-item label="题目图片">
           <el-input v-model="manualForm.imageUrl" placeholder="输入图片 URL (支持外部链接)" class="mb-2">
             <template #prefix><el-icon><Link /></el-icon></template>
@@ -395,7 +388,7 @@
           </div>
         </el-form-item>
 
-        <!-- 选项区域 (修复布局塌陷问题) -->
+        <!-- 选项区域 -->
         <div v-if="[1, 2].includes(manualForm.type)" class="option-container bg-gray-50 p-4 rounded-lg mb-4">
           <div class="option-header flex justify-between items-center mb-2">
             <span class="text-sm font-bold text-gray-600">题目选项</span>
@@ -403,7 +396,6 @@
               <el-icon><Plus /></el-icon> 添加选项
             </el-button>
           </div>
-          <!-- 使用 flex-row 强制横向排列，配合 CSS 兜底 -->
           <div v-for="(opt, index) in manualForm.options" :key="index" class="option-row flex items-center gap-2 mb-2">
             <span class="option-label w-6 text-center font-bold text-gray-500">{{ String.fromCharCode(65 + index) }}</span>
             <el-input v-model="opt.value" placeholder="输入选项内容" class="flex-1" />
@@ -415,7 +407,6 @@
 
         <!-- 答案设置区域 -->
         <el-form-item label="参考答案" prop="answer">
-          <!-- 单选 -->
           <el-radio-group v-if="manualForm.type === 1" v-model="manualForm.answer">
             <el-radio
                 v-for="(opt, index) in manualForm.options"
@@ -427,7 +418,6 @@
             </el-radio>
           </el-radio-group>
 
-          <!-- 多选 -->
           <el-checkbox-group v-if="manualForm.type === 2" v-model="manualForm.answerArray">
             <el-checkbox
                 v-for="(opt, index) in manualForm.options"
@@ -439,13 +429,11 @@
             </el-checkbox>
           </el-checkbox-group>
 
-          <!-- 判断 -->
           <el-radio-group v-if="manualForm.type === 3" v-model="manualForm.answer">
             <el-radio value="1" border>正确 (True)</el-radio>
             <el-radio value="0" border>错误 (False)</el-radio>
           </el-radio-group>
 
-          <!-- 简答/填空 -->
           <el-input
               v-if="[4, 5].includes(manualForm.type)"
               v-model="manualForm.answer"
@@ -488,7 +476,7 @@ import { ref, reactive, onMounted, computed, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Collection, Search, MagicStick, Plus, Stopwatch,
-  Delete, Edit, UploadFilled, Loading, Upload, Link, Picture
+  Delete, Edit, UploadFilled, Loading, Link, Picture
 } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
@@ -519,10 +507,9 @@ const aiForm = reactive({
   topic: '',
   totalCount: 5,
   difficulty: '中等',
-  types: [1] // 默认选中单选
+  types: [1]
 })
 
-// 新增: 导入弹窗状态
 const importDialog = reactive({
   visible: false,
   uploading: false,
@@ -534,17 +521,16 @@ const manualDialog = reactive({
   loading: false
 })
 
-// 手动录入表单
 const manualForm = reactive({
   id: undefined,
   courseId: undefined,
   type: 1,
   difficulty: 1,
   content: '',
-  imageUrl: '', // 新增字段
-  options: [{ value: '' }, { value: '' }, { value: '' }, { value: '' }], // 默认4个选项
-  answer: '', // 单选/判断/简答 的存储值
-  answerArray: [] as string[], // 多选的中间存储值
+  imageUrl: '',
+  options: [{ value: '' }, { value: '' }, { value: '' }, { value: '' }],
+  answer: '',
+  answerArray: [] as string[],
   analysis: '',
   tags: [] as string[]
 })
@@ -555,7 +541,6 @@ const manualRules = {
   content: [{ required: true, message: '请输入题干内容', trigger: 'blur' }],
   answer: [{
     validator: (rule: any, value: any, callback: any) => {
-      // 多选题校验 answerArray，其他校验 answer
       if (manualForm.type === 2) {
         if (!manualForm.answerArray || manualForm.answerArray.length === 0) callback(new Error('请选择答案'))
         else callback()
@@ -578,7 +563,6 @@ onUnmounted(() => {
   stopPoll()
 })
 
-// 监听抽屉打开状态，控制轮询
 watch(drawerVisible, (val) => {
   if (val) {
     fetchTasks()
@@ -588,14 +572,12 @@ watch(drawerVisible, (val) => {
   }
 })
 
-// 计算正在进行的任务数 (用于 Badge)
 const runningTasksCount = computed(() => {
   return tasks.value.filter(t => t.status === 0 || t.status === 1).length
 })
 
 // --- Methods ---
 
-// 1. 基础数据获取
 const fetchCourses = async () => {
   try {
     const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
@@ -619,11 +601,10 @@ const handleSearch = () => {
   fetchData()
 }
 
-// 2. AI 智能出题逻辑
+// 2. AI 智能出题逻辑 - 修复：传递 types 数组而不是 type
 const openAiDialog = () => {
   aiForm.topic = ''
   aiForm.totalCount = 5
-  // 默认选中当前筛选的课程
   if (queryParams.courseId) aiForm.courseId = queryParams.courseId
   aiDialog.visible = true
 }
@@ -636,20 +617,18 @@ const submitAiTask = async () => {
 
   aiDialog.loading = true
   try {
-    // 处理题型逻辑: 选中1个传ID，否则传null(混合)
-    const typeParam = aiForm.types.length === 1 ? aiForm.types[0] : null
-
+    // 修复：直接发送 types 数组，不再转换为单数字段
     await request.post('/question/ai-generate', {
       courseId: aiForm.courseId,
       topic: aiForm.topic,
       totalCount: aiForm.totalCount,
       difficulty: aiForm.difficulty,
-      type: typeParam
+      types: aiForm.types // <--- 关键修复：发送 List
     })
 
     ElMessage.success('任务已提交，AI 正在生成中...')
     aiDialog.visible = false
-    drawerVisible.value = true // 自动打开任务抽屉
+    drawerVisible.value = true
     fetchTasks()
   } catch (error) {
     // error
@@ -658,7 +637,6 @@ const submitAiTask = async () => {
   }
 }
 
-// 3. 任务轮询逻辑
 const fetchTasks = async () => {
   try {
     const res: any = await request.get('/question/task/list', { params: { size: 20 } })
@@ -668,7 +646,7 @@ const fetchTasks = async () => {
 
 const startPoll = () => {
   if (pollTimer) return
-  pollTimer = setInterval(fetchTasks, 3000) // 3秒轮询一次
+  pollTimer = setInterval(fetchTasks, 3000)
 }
 
 const stopPoll = () => {
@@ -686,23 +664,19 @@ const calculateProgress = (task: any) => {
 // 4. 手动录入逻辑
 const openManualDialog = (row?: any) => {
   if (row) {
-    // 编辑模式
     manualForm.id = row.id
     manualForm.courseId = row.courseId
     manualForm.type = row.type
     manualForm.content = row.content
-    manualForm.imageUrl = row.imageUrl || '' // 回显图片
+    manualForm.imageUrl = row.imageUrl || ''
     manualForm.difficulty = row.difficulty
     manualForm.analysis = row.analysis
     manualForm.tags = parseTags(row.tags)
 
-    // 解析选项
     const parsedOpts = parseOptions(row.options)
     manualForm.options = parsedOpts.map((v: string) => ({ value: v }))
 
-    // 解析答案
     if (row.type === 2) {
-      // 多选答案通常存为 JSON "[0,1]" 或 字符串 "0,1"
       try {
         manualForm.answerArray = JSON.parse(row.answer).map(String)
       } catch (e) {
@@ -712,7 +686,6 @@ const openManualDialog = (row?: any) => {
       manualForm.answer = row.answer
     }
   } else {
-    // 新增模式
     manualForm.id = undefined
     manualForm.content = ''
     manualForm.imageUrl = ''
@@ -727,7 +700,6 @@ const openManualDialog = (row?: any) => {
 }
 
 const handleTypeChange = () => {
-  // 切换类型时重置答案
   manualForm.answer = ''
   manualForm.answerArray = []
 }
@@ -748,19 +720,16 @@ const submitManual = async () => {
       try {
         const payload: any = {
           ...manualForm,
-          // 转换选项为纯字符串数组
           options: JSON.stringify(manualForm.options.map(o => o.value)),
           tags: JSON.stringify(manualForm.tags)
         }
 
-        // 处理答案
         if (manualForm.type === 2) {
-          // 多选需排序后存 JSON，保证比对一致性
           const sorted = [...manualForm.answerArray].sort()
           payload.answer = JSON.stringify(sorted)
         }
 
-        delete payload.answerArray // 移除中间变量
+        delete payload.answerArray
 
         if (manualForm.id) {
           await request.put('/question/update', payload)
@@ -784,11 +753,10 @@ const submitManual = async () => {
 // 5. 导入功能逻辑
 const openImportDialog = () => {
   importDialog.visible = true
-  importDialog.courseId = queryParams.courseId // 默认选中当前筛选的课程
+  importDialog.courseId = queryParams.courseId
 }
 
 const downloadTemplate = () => {
-  // 这里可以放一个静态文件的链接，或者生成一个简单的 Excel
   ElMessage.info('模板下载功能待实现，请联系管理员获取标准 Excel 模板')
 }
 
@@ -852,7 +820,6 @@ const formatTime = (time: string) => {
   return time ? time.replace('T', ' ').substring(0, 16) : ''
 }
 
-// 解析后端存储的 JSON 字符串
 const parseOptions = (jsonStr: string) => {
   try {
     return JSON.parse(jsonStr) || []
@@ -869,14 +836,12 @@ const parseTags = (jsonStr: string) => {
   }
 }
 
-// 判断选项是否为正确答案
 const isCorrectAnswer = (row: any, index: number) => {
   if (row.type === 1) {
     return row.answer === index.toString()
   } else if (row.type === 2) {
     try {
       const answers = JSON.parse(row.answer)
-      // 兼容字符串或数字类型的索引比较
       return answers.includes(index) || answers.includes(index.toString())
     } catch (e) { return false }
   }
@@ -890,7 +855,6 @@ const formatAnswer = (row: any) => {
 </script>
 
 <style scoped>
-/* 强制覆盖，确保 flex 生效 */
 .option-row {
   display: flex;
   align-items: center;
@@ -898,7 +862,7 @@ const formatAnswer = (row: any) => {
   margin-bottom: 8px;
 }
 .option-container {
-  background-color: #f9fafb; /* 对应 bg-gray-50 */
+  background-color: #f9fafb;
   padding: 16px;
   border-radius: 8px;
   margin-bottom: 16px;
@@ -912,7 +876,6 @@ const formatAnswer = (row: any) => {
 .list-disc {
   list-style-type: disc;
 }
-/* 图片上传样式 */
 :deep(.el-upload-dragger) {
   width: 100%;
   border-color: #dcdfe6;
