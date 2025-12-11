@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
  * 题库管理控制器
  *
  * @author MySQL数据库架构师
- * @version 1.0.0
+ * @version 1.1.0 (支持多选类型出题)
  * @since 2025-12-10
  */
 @Slf4j
@@ -56,17 +56,17 @@ public class QuestionController {
     @PreAuthorize("hasAnyRole(2, 3)") // 教师或管理员
     public Result<?> startAiGeneration(@RequestBody AiGenerateRequest req) {
         Long userId = getCurrentUserId();
-        
-        // 传递 type 参数
+
+        // 传递 types 列表参数
         Long taskId = generationService.startGenerationTask(
                 req.getCourseId(),
                 req.getTopic(),
                 req.getTotalCount(),
                 req.getDifficulty(),
-                req.getType(), // 新增
+                req.getTypes(), // 修改：传递列表
                 userId
         );
-        
+
         return Result.success(Map.of("taskId", taskId), "AI 出题任务已启动");
     }
 
@@ -99,20 +99,20 @@ public class QuestionController {
         if (StrUtil.isBlank(question.getContent())) {
             throw new BizException(400, "题目内容不能为空");
         }
-        
+
         // 查重
         String hash = DigestUtil.md5Hex(question.getContent().trim());
         if (questionService.checkDuplicate(question.getContent())) {
             throw new BizException(400, "题库中已存在相同内容的题目");
         }
-        
+
         Long userId = getCurrentUserId();
         question.setContentHash(hash);
         question.setCreateBy(userId);
         question.setUpdateBy(userId);
         question.setCreateTime(LocalDateTime.now());
         question.setUpdateTime(LocalDateTime.now());
-        
+
         questionService.save(question);
         return Result.success(question, "题目创建成功");
     }
@@ -127,19 +127,17 @@ public class QuestionController {
         if (question.getId() == null) {
             throw new BizException(400, "ID不能为空");
         }
-        
-        // 权限校验：如果是教师，只能修改自己创建的，或者自己课程下的(视业务需求，这里严格点：自己创建的)
-        // 简单起见：如果是教师，校验是否是题目创建者
+
         Long userId = getCurrentUserId();
         Integer role = getCurrentUserRole();
-        
+
         Question exists = questionService.getById(question.getId());
         if (exists == null) throw new BizException(404, "题目不存在");
-        
+
         if (role == 2 && !exists.getCreateBy().equals(userId)) {
-             throw new BizException(403, "只能修改自己创建的题目");
+            throw new BizException(403, "只能修改自己创建的题目");
         }
-        
+
         // 如果内容变了，重新计算Hash
         if (StrUtil.isNotBlank(question.getContent()) && !question.getContent().equals(exists.getContent())) {
             String hash = DigestUtil.md5Hex(question.getContent().trim());
@@ -152,10 +150,10 @@ public class QuestionController {
             }
             question.setContentHash(hash);
         }
-        
+
         question.setUpdateBy(userId);
         question.setUpdateTime(LocalDateTime.now());
-        
+
         questionService.updateById(question);
         return Result.success("题目更新成功");
     }
@@ -170,10 +168,10 @@ public class QuestionController {
         if (ids == null || ids.isEmpty()) {
             throw new BizException(400, "ID列表不能为空");
         }
-        
+
         Long userId = getCurrentUserId();
         Integer role = getCurrentUserRole();
-        
+
         // 如果是教师，只能删除自己创建的
         if (role == 2) {
             long count = questionService.count(new LambdaQueryWrapper<Question>()
@@ -183,7 +181,7 @@ public class QuestionController {
                 throw new BizException(403, "包含非本人创建的题目，无法删除");
             }
         }
-        
+
         questionService.removeBatchByIds(ids);
         return Result.success("批量删除成功");
     }
@@ -200,7 +198,7 @@ public class QuestionController {
                              @RequestParam(required = false) Integer type) {
         Long userId = getCurrentUserId();
         Integer role = getCurrentUserRole();
-        
+
         LambdaQueryWrapper<Question> query = new LambdaQueryWrapper<>();
         if (StrUtil.isNotBlank(content)) {
             query.like(Question::getContent, content);
@@ -211,28 +209,23 @@ public class QuestionController {
         if (courseId != null) {
             query.eq(Question::getCourseId, courseId);
         }
-        
+
         // 权限控制逻辑
         if (role == 2) { // 教师
-            // 策略：教师只能看到自己教的课程下的题目 OR 自己创建的题目
-            // 1. 获取教师教的课程ID列表
             List<Long> courseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
-                    .eq(CourseUser::getUserId, userId)
-                    .eq(CourseUser::getRole, 2))
+                            .eq(CourseUser::getUserId, userId)
+                            .eq(CourseUser::getRole, 2))
                     .stream().map(CourseUser::getCourseId).collect(Collectors.toList());
-            
+
             if (courseIds.isEmpty()) {
-                // 如果没课，只能看自己创建的
                 query.eq(Question::getCreateBy, userId);
             } else {
-                // (course_id IN (...) OR create_by = userId)
                 query.and(w -> w.in(Question::getCourseId, courseIds)
-                                .or()
-                                .eq(Question::getCreateBy, userId));
+                        .or()
+                        .eq(Question::getCreateBy, userId));
             }
         }
-        // 管理员(3)默认看所有，不做额外限制
-        
+
         query.orderByDesc(Question::getCreateTime);
         return Result.success(questionService.page(new Page<>(page, size), query));
     }
@@ -250,11 +243,8 @@ public class QuestionController {
         return Result.success("导入处理完成");
     }
 
-    // ==================== 内部回调 ====================
-
     /**
-     * 内部查重接口 (供 Dify 或其他服务调用)
-     * POST /api/internal/question/check-duplicate
+     * 内部查重接口
      */
     @PostMapping("/internal/question/check-duplicate")
     public Result<?> checkDuplicateInternal(@RequestBody Map<String, String> payload) {
@@ -272,9 +262,9 @@ public class QuestionController {
         private Integer totalCount;
         private String difficulty;
         /**
-         * 题目类型: 1-单选, 2-多选, 3-判断, 4-简答, 5-填空 (空则随机)
+         * 题目类型列表: [1, 2, 3] (支持多选)
          */
-        private Integer type; 
+        private List<Integer> types;
     }
 
     private Long getCurrentUserId() {

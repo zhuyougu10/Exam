@@ -93,15 +93,15 @@
             >
               <el-table-column label="文件名" min-width="250">
                 <template #default="{ row }">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 text-2xl">
+                  <div class="flex items-center gap-3 overflow-hidden"> <!-- Added overflow-hidden to prevent overlap -->
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 text-2xl flex-shrink-0"> <!-- Added flex-shrink-0 -->
                       <el-icon :class="getFileIconColor(row.fileName)">
                         <component :is="getFileIcon(row.fileName)" />
                       </el-icon>
                     </div>
-                    <div class="flex flex-col overflow-hidden">
+                    <div class="flex flex-col overflow-hidden min-w-0"> <!-- Added min-w-0 for truncate within flex item -->
                       <span class="font-medium text-gray-700 truncate" :title="row.fileName">{{ row.fileName }}</span>
-                      <span class="text-xs text-gray-400">ID: {{ row.difyDocumentId || 'Pending...' }}</span>
+                      <span class="text-xs text-gray-400 truncate">ID: {{ row.difyDocumentId || 'Pending...' }}</span> <!-- Added truncate -->
                     </div>
                   </div>
                 </template>

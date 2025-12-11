@@ -2,54 +2,75 @@
   <div class="app-container p-6 bg-gray-50 min-h-screen">
     <div class="max-w-7xl mx-auto space-y-6">
 
-      <!-- 顶部工具栏 -->
+      <!-- 顶部工具栏 (UI 修复版) -->
       <el-card shadow="never" class="border-0 rounded-xl">
-        <el-row justify="space-between" align="middle" class="gap-4">
-          <!-- 左侧筛选 -->
-          <div class="flex flex-wrap gap-3 items-center">
-            <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600 mr-2">
+        <div class="flex flex-wrap justify-between items-center gap-4">
+
+          <!-- 左侧筛选区：分离图标与表单，使用标准宽度 -->
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- 装饰图标 -->
+            <div class="hidden md:flex p-2 bg-indigo-100 rounded-lg text-indigo-600 mr-2 shrink-0">
               <el-icon size="20"><Collection /></el-icon>
             </div>
-            <el-select
-                v-model="queryParams.courseId"
-                placeholder="选择课程"
-                class="w-48"
-                clearable
-                @change="handleSearch"
-            >
-              <el-option
-                  v-for="item in courseOptions"
-                  :key="item.id"
-                  :label="item.courseName"
-                  :value="item.id"
-              />
-            </el-select>
-            <el-input
-                v-model="queryParams.content"
-                placeholder="搜索题目内容..."
-                prefix-icon="Search"
-                class="w-60"
-                clearable
-                @keyup.enter="handleSearch"
-                @clear="handleSearch"
-            />
-            <el-select
-                v-model="queryParams.type"
-                placeholder="题型"
-                class="w-32"
-                clearable
-                @change="handleSearch"
-            >
-              <el-option label="单选题" :value="1" />
-              <el-option label="多选题" :value="2" />
-              <el-option label="判断题" :value="3" />
-              <el-option label="简答题" :value="4" />
-              <el-option label="填空题" :value="5" />
-            </el-select>
+
+            <!--
+              修复重点：
+              1. 移除 el-form 上的 flex 类，让 inline 模式自然生效
+              2. 使用 style="width: xxx" 替代 Tailwind 类，防止被压缩
+            -->
+            <el-form :inline="true" :model="queryParams" class="!m-0">
+              <el-form-item class="!mb-0 !mr-3">
+                <el-select
+                    v-model="queryParams.courseId"
+                    placeholder="选择课程"
+                    style="width: 200px"
+                    clearable
+                    @change="handleSearch"
+                >
+                  <el-option
+                      v-for="item in courseOptions"
+                      :key="item.id"
+                      :label="item.courseName"
+                      :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item class="!mb-0 !mr-3">
+                <el-input
+                    v-model="queryParams.content"
+                    placeholder="搜索题目内容..."
+                    prefix-icon="Search"
+                    style="width: 240px"
+                    clearable
+                    @keyup.enter="handleSearch"
+                    @clear="handleSearch"
+                />
+              </el-form-item>
+
+              <el-form-item class="!mb-0">
+                <el-select
+                    v-model="queryParams.type"
+                    placeholder="题型"
+                    style="width: 140px"
+                    clearable
+                    @change="handleSearch"
+                >
+                  <el-option label="单选题" :value="1" />
+                  <el-option label="多选题" :value="2" />
+                  <el-option label="判断题" :value="3" />
+                  <el-option label="简答题" :value="4" />
+                  <el-option label="填空题" :value="5" />
+                </el-select>
+              </el-form-item>
+            </el-form>
           </div>
 
-          <!-- 右侧按钮组 -->
-          <div class="flex items-center gap-3">
+          <!-- 右侧按钮组：固定靠右 -->
+          <div class="flex items-center gap-3 shrink-0">
+            <el-button type="warning" plain icon="Upload" @click="openImportDialog">
+              批量导入
+            </el-button>
             <el-button type="primary" color="#6366f1" icon="MagicStick" @click="openAiDialog">
               AI 智能出题
             </el-button>
@@ -60,7 +81,7 @@
               <el-button icon="Stopwatch" circle @click="drawerVisible = true" />
             </el-badge>
           </div>
-        </el-row>
+        </div>
       </el-card>
 
       <!-- 题目列表区域 -->
@@ -77,7 +98,18 @@
             <template #default="{ row }">
               <div class="p-4 bg-gray-50 rounded-lg mx-4">
                 <el-descriptions title="题目详情" :column="1" border>
-                  <el-descriptions-item label="完整题干">{{ row.content }}</el-descriptions-item>
+                  <el-descriptions-item label="完整题干">
+                    <div class="flex flex-col gap-2">
+                      <span>{{ row.content }}</span>
+                      <el-image
+                          v-if="row.imageUrl"
+                          :src="row.imageUrl"
+                          :preview-src-list="[row.imageUrl]"
+                          class="w-48 h-auto rounded border border-gray-200"
+                          fit="contain"
+                      />
+                    </div>
+                  </el-descriptions-item>
                   <el-descriptions-item label="选项" v-if="[1, 2].includes(row.type)">
                     <ul class="list-disc pl-5">
                       <li v-for="(opt, idx) in parseOptions(row.options)" :key="idx" class="text-gray-600">
@@ -99,7 +131,22 @@
 
           <el-table-column label="题干" min-width="300">
             <template #default="{ row }">
-              <span class="truncate block max-w-md" :title="row.content">{{ row.content }}</span>
+              <div class="flex items-center gap-2">
+                <el-image
+                    v-if="row.imageUrl"
+                    :src="row.imageUrl"
+                    class="w-10 h-10 rounded flex-shrink-0 bg-gray-100"
+                    :preview-src-list="[row.imageUrl]"
+                    preview-teleported
+                >
+                  <template #error>
+                    <div class="flex justify-center items-center w-full h-full text-gray-400">
+                      <el-icon><Picture /></el-icon>
+                    </div>
+                  </template>
+                </el-image>
+                <span class="truncate block max-w-md" :title="row.content">{{ row.content }}</span>
+              </div>
             </template>
           </el-table-column>
 
@@ -158,7 +205,7 @@
       </el-card>
     </div>
 
-    <!-- AI 智能出题弹窗 -->
+    <!-- 弹窗 1: AI 智能出题向导 -->
     <el-dialog v-model="aiDialog.visible" title="AI 智能出题向导" width="500px" destroy-on-close>
       <el-form :model="aiForm" label-position="top">
         <el-form-item label="目标课程">
@@ -211,7 +258,50 @@
       </template>
     </el-dialog>
 
-    <!-- 任务进度抽屉 -->
+    <!-- 弹窗 2: Excel 批量导入 (新增) -->
+    <el-dialog v-model="importDialog.visible" title="Excel 批量导入题目" width="500px">
+      <el-form label-position="top">
+        <el-form-item label="导入到课程" required>
+          <el-select v-model="importDialog.courseId" placeholder="请选择课程" class="w-full">
+            <el-option
+                v-for="item in courseOptions"
+                :key="item.id"
+                :label="item.courseName"
+                :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="上传文件">
+          <el-upload
+              class="w-full"
+              drag
+              action="#"
+              :http-request="handleImport"
+              :show-file-list="false"
+              :disabled="importDialog.uploading"
+              accept=".xlsx, .xls"
+          >
+            <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+            <div class="el-upload__text">
+              将 Excel 文件拖到此处，或 <em>点击上传</em>
+            </div>
+            <template #tip>
+              <div class="el-upload__tip flex justify-between items-center">
+                <span>仅支持 .xlsx, .xls 格式</span>
+                <el-link type="primary" :underline="false" @click.stop="downloadTemplate">下载模板</el-link>
+              </div>
+            </template>
+          </el-upload>
+        </el-form-item>
+
+        <div v-if="importDialog.uploading" class="flex items-center justify-center gap-2 text-indigo-600 mt-2">
+          <el-icon class="is-loading"><Loading /></el-icon> 正在解析并导入数据...
+        </div>
+      </el-form>
+    </el-dialog>
+
+    <!-- 抽屉: 任务进度 -->
     <el-drawer v-model="drawerVisible" title="AI 出题任务中心" size="400px">
       <div class="space-y-4">
         <div v-if="tasks.length === 0" class="text-center text-gray-400 py-10">
@@ -241,7 +331,7 @@
       </div>
     </el-drawer>
 
-    <!-- 手动新增/编辑弹窗 -->
+    <!-- 弹窗 3: 手动新增/编辑 -->
     <el-dialog
         v-model="manualDialog.visible"
         :title="manualForm.id ? '编辑题目' : '手动录入题目'"
@@ -282,6 +372,27 @@
               :rows="3"
               placeholder="请输入题目描述..."
           />
+        </el-form-item>
+
+        <!-- 新增: 题目图片支持 -->
+        <el-form-item label="题目图片">
+          <el-input v-model="manualForm.imageUrl" placeholder="输入图片 URL (支持外部链接)" class="mb-2">
+            <template #prefix><el-icon><Link /></el-icon></template>
+          </el-input>
+          <div v-if="manualForm.imageUrl" class="p-2 border border-dashed rounded bg-gray-50 inline-block">
+            <el-image
+                :src="manualForm.imageUrl"
+                class="h-32 w-auto object-contain"
+                :preview-src-list="[manualForm.imageUrl]"
+                fit="contain"
+            >
+              <template #error>
+                <div class="flex items-center justify-center h-32 w-32 text-gray-400 bg-gray-100 text-xs">
+                  图片无法加载
+                </div>
+              </template>
+            </el-image>
+          </div>
         </el-form-item>
 
         <!-- 选项区域 (修复布局塌陷问题) -->
@@ -377,7 +488,7 @@ import { ref, reactive, onMounted, computed, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Collection, Search, MagicStick, Plus, Stopwatch,
-  Delete, Edit
+  Delete, Edit, UploadFilled, Loading, Upload, Link, Picture
 } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
@@ -411,6 +522,13 @@ const aiForm = reactive({
   types: [1] // 默认选中单选
 })
 
+// 新增: 导入弹窗状态
+const importDialog = reactive({
+  visible: false,
+  uploading: false,
+  courseId: undefined
+})
+
 const manualDialog = reactive({
   visible: false,
   loading: false
@@ -423,6 +541,7 @@ const manualForm = reactive({
   type: 1,
   difficulty: 1,
   content: '',
+  imageUrl: '', // 新增字段
   options: [{ value: '' }, { value: '' }, { value: '' }, { value: '' }], // 默认4个选项
   answer: '', // 单选/判断/简答 的存储值
   answerArray: [] as string[], // 多选的中间存储值
@@ -572,6 +691,7 @@ const openManualDialog = (row?: any) => {
     manualForm.courseId = row.courseId
     manualForm.type = row.type
     manualForm.content = row.content
+    manualForm.imageUrl = row.imageUrl || '' // 回显图片
     manualForm.difficulty = row.difficulty
     manualForm.analysis = row.analysis
     manualForm.tags = parseTags(row.tags)
@@ -595,6 +715,7 @@ const openManualDialog = (row?: any) => {
     // 新增模式
     manualForm.id = undefined
     manualForm.content = ''
+    manualForm.imageUrl = ''
     manualForm.analysis = ''
     manualForm.options = [{ value: '' }, { value: '' }, { value: '' }, { value: '' }]
     manualForm.answer = ''
@@ -658,6 +779,42 @@ const submitManual = async () => {
       }
     }
   })
+}
+
+// 5. 导入功能逻辑
+const openImportDialog = () => {
+  importDialog.visible = true
+  importDialog.courseId = queryParams.courseId // 默认选中当前筛选的课程
+}
+
+const downloadTemplate = () => {
+  // 这里可以放一个静态文件的链接，或者生成一个简单的 Excel
+  ElMessage.info('模板下载功能待实现，请联系管理员获取标准 Excel 模板')
+}
+
+const handleImport = async (options: any) => {
+  if (!importDialog.courseId) {
+    ElMessage.warning('请先选择导入的目标课程')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', options.file)
+  formData.append('courseId', importDialog.courseId.toString())
+
+  importDialog.uploading = true
+  try {
+    await request.post('/question/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    ElMessage.success('导入成功！')
+    importDialog.visible = false
+    fetchData()
+  } catch (error: any) {
+    ElMessage.error(error.message || '导入失败')
+  } finally {
+    importDialog.uploading = false
+  }
 }
 
 const handleDelete = async (id: number) => {
@@ -754,5 +911,13 @@ const formatAnswer = (row: any) => {
 }
 .list-disc {
   list-style-type: disc;
+}
+/* 图片上传样式 */
+:deep(.el-upload-dragger) {
+  width: 100%;
+  border-color: #dcdfe6;
+}
+:deep(.el-upload-dragger:hover) {
+  border-color: #409eff;
 }
 </style>
