@@ -87,6 +87,21 @@ public class QuestionController {
         return Result.success(taskPage);
     }
 
+    /**
+     * 清除已完成或失败的 AI 任务
+     * DELETE /api/question/task/clear
+     */
+    @DeleteMapping("/question/task/clear")
+    @PreAuthorize("hasAnyRole(2, 3)")
+    public Result<?> clearFinishedTasks() {
+        Long userId = getCurrentUserId();
+        // 删除状态为 2(完成) 或 3(失败) 的任务
+        aiTaskService.remove(new LambdaQueryWrapper<AiTask>()
+                .eq(AiTask::getCreateBy, userId)
+                .in(AiTask::getStatus, 2, 3));
+        return Result.success("已清除历史任务");
+    }
+
     // ==================== 题库 CRUD ====================
 
     /**
@@ -229,6 +244,8 @@ public class QuestionController {
         query.orderByDesc(Question::getCreateTime);
         return Result.success(questionService.page(new Page<>(page, size), query));
     }
+
+
 
     /**
      * Excel 导入

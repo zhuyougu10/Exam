@@ -128,7 +128,7 @@
         </el-table-column>
       </el-table>
 
-      <!-- 分页组件 -->
+      <!-- 分页组件 (Fixed) -->
       <div class="pagination-box">
         <el-pagination
             v-model:current-page="queryParams.page"
@@ -137,8 +137,8 @@
             :page-sizes="[10, 20, 50]"
             background
             layout="total, sizes, prev, pager, next, jumper"
-            @size-change="fetchData"
-            @current-change="fetchData"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
         />
       </div>
     </el-card>
@@ -272,6 +272,18 @@ onMounted(() => {
   fetchDepts()
   fetchData()
 })
+
+// 分页处理方法 (Fix)
+const handleSizeChange = (val: number) => {
+  queryParams.size = val
+  queryParams.page = 1 // 重置到第一页
+  fetchData()
+}
+
+const handleCurrentChange = (val: number) => {
+  queryParams.page = val
+  fetchData()
+}
 
 // 获取部门树
 const fetchDepts = async () => {

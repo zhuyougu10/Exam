@@ -58,7 +58,6 @@
                 <template #prefix><el-icon><Search /></el-icon></template>
               </el-input>
 
-              <!-- 部门选择已移至左侧，此处可保留作为辅助或移除，此处保留并与左侧联动 -->
               <el-select
                   v-model="queryParams.deptId"
                   placeholder="选择所属部门"
@@ -68,7 +67,6 @@
                   @clear="handleSearch"
               >
                 <template #prefix><el-icon><OfficeBuilding /></el-icon></template>
-                <!-- 修复：虽然此处用的是 el-select + option，但也建议保持一致性，如果将来换回 tree-select 这里的 props 也要改 -->
                 <el-option
                     v-for="item in flattenDepts(deptOptions)"
                     :key="item.id"
@@ -181,7 +179,7 @@
             </el-table-column>
           </el-table>
 
-          <!-- 分页组件 -->
+          <!-- 分页组件 (Fixed) -->
           <div class="pagination-wrapper">
             <el-pagination
                 v-model:current-page="queryParams.page"
@@ -190,8 +188,8 @@
                 :page-sizes="[10, 20, 50, 100]"
                 layout="total, sizes, prev, pager, next, jumper"
                 background
-                @size-change="fetchData"
-                @current-change="fetchData"
+                @size-change="handleSizeChange"
+                @current-change="handleCurrentChange"
             />
           </div>
         </el-card>
@@ -235,7 +233,6 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="所属部门" prop="deptId">
-              <!-- 修复点：添加 value: 'id' 配置 -->
               <el-tree-select
                   v-model="form.deptId"
                   :data="deptOptions"
@@ -335,6 +332,18 @@ onMounted(() => {
   fetchData()
 })
 
+// 分页处理方法
+const handleSizeChange = (val: number) => {
+  queryParams.size = val
+  queryParams.page = 1 // 重置到第一页
+  fetchData()
+}
+
+const handleCurrentChange = (val: number) => {
+  queryParams.page = val
+  fetchData()
+}
+
 // 部门树过滤逻辑
 const filterNode = (value: string, data: any) => {
   if (!value) return true
@@ -426,7 +435,6 @@ const handleResetPwd = (row: any) => {
         type: 'warning',
       }
   ).then(async () => {
-    // 假设后端有重置接口
     ElMessage.info('功能开发中，请稍后')
   })
 }
@@ -476,13 +484,11 @@ const getRoleType = (role: number) => {
 }
 
 const getRoleClass = (role: number) => {
-  // 用于给头像加不同颜色的边框或背景
   const map: Record<number, string> = { 1: 'role-student', 2: 'role-teacher', 3: 'role-admin' }
   return map[role] || ''
 }
 
 const getDeptName = (deptId: number) => {
-  // 由于现在部门是树形结构，查找名称需要遍历树
   const findName = (depts: any[], id: number): string | null => {
     for (const dept of depts) {
       if (dept.id === id) return dept.deptName
@@ -502,7 +508,6 @@ const getDeptName = (deptId: number) => {
   padding: 20px;
 }
 
-/* 左侧部门树卡片 */
 .dept-tree-card {
   height: 100%;
   min-height: calc(100vh - 120px);
@@ -536,7 +541,6 @@ const getDeptName = (deptId: number) => {
   }
 }
 
-/* 筛选栏样式 */
 .filter-container {
   margin-bottom: 20px;
   border-radius: 8px;
@@ -564,7 +568,6 @@ const getDeptName = (deptId: number) => {
   .w-200 { width: 200px; }
 }
 
-/* 表格容器样式 */
 .table-container {
   border-radius: 8px;
   min-height: 600px;
@@ -572,7 +575,6 @@ const getDeptName = (deptId: number) => {
   flex-direction: column;
 }
 
-/* 用户信息单元格 */
 .user-info-cell {
   display: flex;
   align-items: center;
@@ -609,7 +611,6 @@ const getDeptName = (deptId: number) => {
   }
 }
 
-/* 部门单元格 */
 .dept-cell {
   display: flex;
   align-items: center;
@@ -621,7 +622,6 @@ const getDeptName = (deptId: number) => {
   }
 }
 
-/* 状态单元格 */
 .status-cell {
   display: flex;
   align-items: center;
@@ -638,14 +638,12 @@ const getDeptName = (deptId: number) => {
   }
 }
 
-/* 分页 */
 .pagination-wrapper {
   margin-top: 24px;
   display: flex;
   justify-content: flex-end;
 }
 
-/* 辅助样式 */
 .mr-1 { margin-right: 4px; }
 .text-gray { color: #c0c4cc; }
 .w-full { width: 100%; }

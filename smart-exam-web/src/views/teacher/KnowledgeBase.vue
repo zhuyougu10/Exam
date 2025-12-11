@@ -3,7 +3,7 @@
     <div class="max-w-7xl mx-auto space-y-6">
       <!-- 顶部筛选与操作栏 -->
       <el-card shadow="never" class="border-0 rounded-xl">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+        <div class="flex flex-wrap justify-between items-center gap-4">
           <div class="flex items-center gap-2">
             <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600">
               <el-icon size="20"><Collection /></el-icon>
@@ -14,13 +14,13 @@
             </div>
           </div>
 
-          <el-form :inline="true" class="flex-1 flex justify-end m-0">
-            <el-form-item class="!mr-3 !mb-0">
+          <el-form :inline="true" class="!m-0 flex flex-wrap items-center gap-2">
+            <el-form-item class="!mr-0 !mb-0">
               <el-select
                   v-model="queryParams.courseId"
                   placeholder="请选择课程"
                   filterable
-                  class="w-60"
+                  class="w-48 md:w-60"
                   @change="handleCourseChange"
               >
                 <el-option
@@ -31,16 +31,17 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item class="!mr-3 !mb-0">
+            <el-form-item class="!mr-0 !mb-0">
               <el-input
                   v-model="queryParams.keyword"
                   placeholder="搜索文件名"
                   prefix-icon="Search"
                   clearable
+                  class="w-40 md:w-52"
                   @input="handleSearch"
               />
             </el-form-item>
-            <el-form-item class="!mb-0">
+            <el-form-item class="!mr-0 !mb-0">
               <el-button :icon="Refresh" circle @click="refreshData" />
             </el-form-item>
           </el-form>
@@ -58,26 +59,39 @@
                   class="upload-area w-full"
                   drag
                   action="#"
+                  multiple
                   :http-request="customUpload"
                   :show-file-list="false"
-                  :disabled="!queryParams.courseId || uploading"
+                  :disabled="!queryParams.courseId || uploadingCount > 0"
                   accept=".pdf,.doc,.docx,.md,.txt"
               >
                 <el-icon class="el-icon--upload"><upload-filled /></el-icon>
                 <div class="el-upload__text">
                   将文件拖到此处，或 <em>点击上传</em>
+                  <div class="text-xs text-gray-400 mt-1">(支持批量上传)</div>
                 </div>
                 <template #tip>
                   <div class="el-upload__tip text-center mt-4">
                     <div v-if="!queryParams.courseId" class="text-orange-500 flex items-center justify-center gap-1">
                       <el-icon><Warning /></el-icon> 请先在上方选择课程
                     </div>
-                    <div v-else class="text-gray-400">
+                    <div v-else class="text-gray-400 px-4">
                       支持 PDF, Word, Markdown (Max 10MB)
                     </div>
                   </div>
                 </template>
               </el-upload>
+
+              <!-- 上传进度提示 -->
+              <div v-if="uploadingCount > 0" class="mt-4 px-4 text-center">
+                <el-progress
+                    :percentage="100"
+                    status="warning"
+                    :indeterminate="true"
+                    :duration="2"
+                    :format="() => `正在上传 ${uploadingCount} 个文件...`"
+                />
+              </div>
             </div>
           </el-card>
         </div>
@@ -86,22 +100,22 @@
         <div class="lg:col-span-3">
           <el-card shadow="never" class="border-0 rounded-xl min-h-[500px]">
             <el-table
-                v-loading="loading"
+                v-loading="loading && uploadingCount === 0"
                 :data="filteredFileList"
                 style="width: 100%"
                 :header-cell-style="{ background: '#f9fafb', color: '#374151', fontWeight: '600' }"
             >
               <el-table-column label="文件名" min-width="250">
                 <template #default="{ row }">
-                  <div class="flex items-center gap-3 overflow-hidden"> <!-- Added overflow-hidden to prevent overlap -->
-                    <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 text-2xl flex-shrink-0"> <!-- Added flex-shrink-0 -->
+                  <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 text-2xl flex-shrink-0">
                       <el-icon :class="getFileIconColor(row.fileName)">
                         <component :is="getFileIcon(row.fileName)" />
                       </el-icon>
                     </div>
-                    <div class="flex flex-col overflow-hidden min-w-0"> <!-- Added min-w-0 for truncate within flex item -->
+                    <div class="flex flex-col overflow-hidden min-w-0">
                       <span class="font-medium text-gray-700 truncate" :title="row.fileName">{{ row.fileName }}</span>
-                      <span class="text-xs text-gray-400 truncate">ID: {{ row.difyDocumentId || 'Pending...' }}</span> <!-- Added truncate -->
+                      <span class="text-xs text-gray-400 truncate">ID: {{ row.difyDocumentId || 'Pending...' }}</span>
                     </div>
                   </div>
                 </template>
@@ -165,7 +179,7 @@ import request from '@/utils/request'
 
 // --- 状态定义 ---
 const loading = ref(false)
-const uploading = ref(false)
+const uploadingCount = ref(0) // 追踪正在上传的文件数量
 const courseOptions = ref<any[]>([])
 const fileList = ref<any[]>([])
 const pollingTimer = ref<any>(null)
@@ -202,7 +216,6 @@ onUnmounted(() => {
 // 1. 获取课程列表
 const fetchCourses = async () => {
   try {
-    // 这里暂时复用 admin 接口，如果权限不足需后端调整或提供 /api/teacher/courses
     const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
     if (res && res.records) {
       courseOptions.value = res.records
@@ -238,7 +251,7 @@ const fetchFiles = async (isPolling = false) => {
   }
 }
 
-// 3. 上传文件
+// 3. 上传文件 (支持批量并发)
 const customUpload = async (options: any) => {
   if (!queryParams.courseId) {
     ElMessage.warning('请先选择课程')
@@ -249,17 +262,19 @@ const customUpload = async (options: any) => {
   formData.append('file', options.file)
   formData.append('courseId', queryParams.courseId.toString())
 
-  uploading.value = true
+  uploadingCount.value++ // 增加上传计数
   try {
     await request.post('/knowledge/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    ElMessage.success('上传成功，Dify 正在索引文档...')
-    fetchFiles() // 刷新列表
+    // 单个文件成功不立即刷新，而是所有传完后刷新，或者静默刷新
+    // 这里选择简单的策略：每成功一个就静默刷新一次列表
+    fetchFiles(true)
+    ElMessage.success(`文件 ${options.file.name} 上传成功`)
   } catch (error: any) {
-    ElMessage.error(error.message || '上传失败')
+    ElMessage.error(`文件 ${options.file.name} 上传失败: ${error.message || '未知错误'}`)
   } finally {
-    uploading.value = false
+    uploadingCount.value-- // 减少上传计数
   }
 }
 

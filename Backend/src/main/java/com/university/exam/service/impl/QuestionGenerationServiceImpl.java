@@ -12,7 +12,8 @@ import com.university.exam.entity.*;
 import com.university.exam.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.aop.framework.AopContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -28,7 +29,7 @@ import java.util.stream.Collectors;
  * 智能出题服务实现类
  *
  * @author MySQL数据库架构师
- * @version 1.5.0 (直接传递类型ID字符串)
+ * @version 1.5.1 (修复异步调用失效问题)
  * @since 2025-12-10
  */
 @Slf4j
@@ -42,6 +43,12 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
     private final NoticeService noticeService;
     private final UserNoticeService userNoticeService;
     private final CourseService courseService;
+
+    // 关键修复：注入自身代理对象，用于调用 @Async 方法
+    // 使用 @Lazy 避免循环依赖
+    @Autowired
+    @Lazy
+    private QuestionGenerationService self;
 
     // 单次调用 Dify 的批处理大小
     private static final int BATCH_SIZE = 10;
@@ -69,15 +76,11 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
         aiTaskService.save(task);
 
-        // 异步调用
-        try {
-            ((QuestionGenerationService) AopContext.currentProxy()).processGenerationAsync(
-                    task.getId(), courseId, topic, totalCount, difficulty, types, userId, apiKey
-            );
-        } catch (IllegalStateException e) {
-            log.warn("AopContext 未暴露，尝试直接调用");
-            processGenerationAsync(task.getId(), courseId, topic, totalCount, difficulty, types, userId, apiKey);
-        }
+        // 关键修复：使用 self 代理对象调用异步方法，确保 @Async 生效
+        // 这样主线程会立即返回，不会等待 processGenerationAsync 执行完毕
+        self.processGenerationAsync(
+                task.getId(), courseId, topic, totalCount, difficulty, types, userId, apiKey
+        );
 
         return task.getId();
     }
@@ -183,8 +186,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                     }
                 }
 
-                if (!batchSuccess) failedAttempts++;
-                else failedAttempts = 0;
+                if (!batchSuccess) failedAttempts++; else failedAttempts = 0;
 
                 try {
                     Thread.sleep(2000);
@@ -266,18 +268,12 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
 
     private String getTypeName(Integer type) {
         switch (type) {
-            case 1:
-                return "单选";
-            case 2:
-                return "多选";
-            case 3:
-                return "判断";
-            case 4:
-                return "简答";
-            case 5:
-                return "填空";
-            default:
-                return "未知";
+            case 1: return "单选";
+            case 2: return "多选";
+            case 3: return "判断";
+            case 4: return "简答";
+            case 5: return "填空";
+            default: return "未知";
         }
     }
 

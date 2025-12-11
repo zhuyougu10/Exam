@@ -2,7 +2,7 @@
   <div class="app-container p-6 bg-gray-50 min-h-screen">
     <div class="max-w-7xl mx-auto space-y-6">
 
-      <!-- 顶部工具栏 -->
+      <!-- 顶部工具栏 (UI 修复版) -->
       <el-card shadow="never" class="border-0 rounded-xl">
         <div class="flex flex-wrap justify-between items-center gap-4">
 
@@ -192,8 +192,8 @@
               :total="total"
               :page-sizes="[10, 20, 50]"
               layout="total, sizes, prev, pager, next, jumper"
-              @size-change="fetchData"
-              @current-change="fetchData"
+              @size-change="handleSizeChange"
+              @current-change="handleCurrentChange"
           />
         </div>
       </el-card>
@@ -296,7 +296,25 @@
     </el-dialog>
 
     <!-- 抽屉: 任务进度 -->
-    <el-drawer v-model="drawerVisible" title="AI 出题任务中心" size="400px">
+    <el-drawer v-model="drawerVisible" :with-header="false" size="400px">
+      <!-- 自定义头部 -->
+      <!-- 修复：添加 style 指定边框颜色 #e5e7eb (浅灰色) -->
+      <div class="flex justify-between items-center mb-4 pb-3 border-b" style="border-color: #e5e7eb">
+        <span class="text-lg font-bold text-gray-800">AI 出题任务中心</span>
+        <el-popconfirm
+            v-if="hasFinishedTasks"
+            title="确定清除所有已完成和失败的任务记录吗？"
+            @confirm="handleClearTasks"
+            width="260"
+        >
+          <template #reference>
+            <el-button type="danger" link size="small">
+              <el-icon class="mr-1"><Delete /></el-icon> 清除已完成
+            </el-button>
+          </template>
+        </el-popconfirm>
+      </div>
+
       <div class="space-y-4">
         <div v-if="tasks.length === 0" class="text-center text-gray-400 py-10">
           暂无任务记录
@@ -388,7 +406,6 @@
           </div>
         </el-form-item>
 
-        <!-- 选项区域 -->
         <div v-if="[1, 2].includes(manualForm.type)" class="option-container bg-gray-50 p-4 rounded-lg mb-4">
           <div class="option-header flex justify-between items-center mb-2">
             <span class="text-sm font-bold text-gray-600">题目选项</span>
@@ -405,7 +422,6 @@
           </div>
         </div>
 
-        <!-- 答案设置区域 -->
         <el-form-item label="参考答案" prop="answer">
           <el-radio-group v-if="manualForm.type === 1" v-model="manualForm.answer">
             <el-radio
@@ -476,7 +492,7 @@ import { ref, reactive, onMounted, computed, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Collection, Search, MagicStick, Plus, Stopwatch,
-  Delete, Edit, UploadFilled, Loading, Link, Picture
+  Delete, Edit, UploadFilled, Loading, Upload, Link, Picture
 } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
@@ -488,6 +504,9 @@ const total = ref(0)
 const drawerVisible = ref(false)
 const tasks = ref<any[]>([])
 let pollTimer: any = null
+
+// 新增：记录上一次轮询时处于“进行中”的任务ID
+const previousRunningTaskIds = ref<Set<number>>(new Set())
 
 const queryParams = reactive({
   page: 1,
@@ -507,7 +526,7 @@ const aiForm = reactive({
   topic: '',
   totalCount: 5,
   difficulty: '中等',
-  types: [1]
+  types: [1] // 默认选中单选
 })
 
 const importDialog = reactive({
@@ -576,7 +595,24 @@ const runningTasksCount = computed(() => {
   return tasks.value.filter(t => t.status === 0 || t.status === 1).length
 })
 
+// 计算是否有已完成或失败的任务
+const hasFinishedTasks = computed(() => {
+  return tasks.value.some(t => t.status === 2 || t.status === 3)
+})
+
 // --- Methods ---
+
+// 分页处理方法
+const handleSizeChange = (val: number) => {
+  queryParams.size = val
+  queryParams.page = 1 // 重置到第一页
+  fetchData()
+}
+
+const handleCurrentChange = (val: number) => {
+  queryParams.page = val
+  fetchData()
+}
 
 const fetchCourses = async () => {
   try {
@@ -601,7 +637,7 @@ const handleSearch = () => {
   fetchData()
 }
 
-// 2. AI 智能出题逻辑 - 修复：传递 types 数组而不是 type
+// 2. AI 智能出题逻辑
 const openAiDialog = () => {
   aiForm.topic = ''
   aiForm.totalCount = 5
@@ -617,13 +653,12 @@ const submitAiTask = async () => {
 
   aiDialog.loading = true
   try {
-    // 修复：直接发送 types 数组，不再转换为单数字段
     await request.post('/question/ai-generate', {
       courseId: aiForm.courseId,
       topic: aiForm.topic,
       totalCount: aiForm.totalCount,
       difficulty: aiForm.difficulty,
-      types: aiForm.types // <--- 关键修复：发送 List
+      types: aiForm.types
     })
 
     ElMessage.success('任务已提交，AI 正在生成中...')
@@ -637,11 +672,52 @@ const submitAiTask = async () => {
   }
 }
 
+// 3. 任务轮询逻辑 (已添加自动刷新触发逻辑)
 const fetchTasks = async () => {
   try {
     const res: any = await request.get('/question/task/list', { params: { size: 20 } })
-    tasks.value = res.records
+    const newTasks = res.records
+    tasks.value = newTasks
+
+    // --- 状态检测逻辑开始 ---
+    let needRefresh = false
+    const currentRunningIds = new Set<number>()
+
+    newTasks.forEach((t: any) => {
+      // 0:等待, 1:进行中
+      if (t.status === 0 || t.status === 1) {
+        currentRunningIds.add(t.id)
+      }
+      // 2:已完成
+      else if (t.status === 2) {
+        // 如果该任务之前在运行中，现在完成了
+        if (previousRunningTaskIds.value.has(t.id)) {
+          needRefresh = true
+        }
+      }
+    })
+
+    if (needRefresh) {
+      ElMessage.success('AI 出题任务已完成，题目列表已自动更新')
+      fetchData() // 自动刷新题目列表
+    }
+
+    // 更新"正在运行的任务"快照
+    previousRunningTaskIds.value = currentRunningIds
+    // --- 状态检测逻辑结束 ---
+
   } catch (error) { console.error(error) }
+}
+
+// 清除任务逻辑
+const handleClearTasks = async () => {
+  try {
+    await request.delete('/question/task/clear')
+    ElMessage.success('历史任务已清除')
+    fetchTasks() // 刷新列表
+  } catch (error) {
+    console.error(error)
+  }
 }
 
 const startPoll = () => {
