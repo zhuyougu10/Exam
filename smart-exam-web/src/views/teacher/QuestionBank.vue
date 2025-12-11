@@ -252,7 +252,7 @@
       </template>
     </el-dialog>
 
-    <!-- 弹窗 2: Excel 批量导入 -->
+    <!-- 弹窗 2: Excel 批量导入 (支持 multiple) -->
     <el-dialog v-model="importDialog.visible" title="Excel 批量导入题目" width="500px">
       <el-form label-position="top">
         <el-form-item label="导入到课程" required>
@@ -271,6 +271,7 @@
               class="w-full"
               drag
               action="#"
+              multiple
               :http-request="handleImport"
               :show-file-list="false"
               :disabled="importDialog.uploading"
@@ -279,10 +280,12 @@
             <el-icon class="el-icon--upload"><upload-filled /></el-icon>
             <div class="el-upload__text">
               将 Excel 文件拖到此处，或 <em>点击上传</em>
+              <div class="text-xs text-gray-400 mt-1">(支持多选批量上传)</div>
             </div>
             <template #tip>
               <div class="el-upload__tip flex justify-between items-center">
                 <span>仅支持 .xlsx, .xls 格式</span>
+                <!-- 修复：调用真实的下载方法 -->
                 <el-link type="primary" :underline="false" @click.stop="downloadTemplate">下载模板</el-link>
               </div>
             </template>
@@ -290,7 +293,7 @@
         </el-form-item>
 
         <div v-if="importDialog.uploading" class="flex items-center justify-center gap-2 text-indigo-600 mt-2">
-          <el-icon class="is-loading"><Loading /></el-icon> 正在解析并导入数据...
+          <el-icon class="is-loading"><Loading /></el-icon> 正在处理：剩余 {{ importDialog.uploadingCount }} 个文件...
         </div>
       </el-form>
     </el-dialog>
@@ -298,7 +301,6 @@
     <!-- 抽屉: 任务进度 -->
     <el-drawer v-model="drawerVisible" :with-header="false" size="400px">
       <!-- 自定义头部 -->
-      <!-- 修复：添加 style 指定边框颜色 #e5e7eb (浅灰色) -->
       <div class="flex justify-between items-center mb-4 pb-3 border-b" style="border-color: #e5e7eb">
         <span class="text-lg font-bold text-gray-800">AI 出题任务中心</span>
         <el-popconfirm
@@ -505,7 +507,6 @@ const drawerVisible = ref(false)
 const tasks = ref<any[]>([])
 let pollTimer: any = null
 
-// 新增：记录上一次轮询时处于“进行中”的任务ID
 const previousRunningTaskIds = ref<Set<number>>(new Set())
 
 const queryParams = reactive({
@@ -526,12 +527,14 @@ const aiForm = reactive({
   topic: '',
   totalCount: 5,
   difficulty: '中等',
-  types: [1] // 默认选中单选
+  types: [1]
 })
 
+// 修改：增加 uploadingCount 用于批量上传计数
 const importDialog = reactive({
   visible: false,
   uploading: false,
+  uploadingCount: 0,
   courseId: undefined
 })
 
@@ -595,17 +598,15 @@ const runningTasksCount = computed(() => {
   return tasks.value.filter(t => t.status === 0 || t.status === 1).length
 })
 
-// 计算是否有已完成或失败的任务
 const hasFinishedTasks = computed(() => {
   return tasks.value.some(t => t.status === 2 || t.status === 3)
 })
 
 // --- Methods ---
 
-// 分页处理方法
 const handleSizeChange = (val: number) => {
   queryParams.size = val
-  queryParams.page = 1 // 重置到第一页
+  queryParams.page = 1
   fetchData()
 }
 
@@ -672,25 +673,20 @@ const submitAiTask = async () => {
   }
 }
 
-// 3. 任务轮询逻辑 (已添加自动刷新触发逻辑)
+// 3. 任务轮询逻辑
 const fetchTasks = async () => {
   try {
     const res: any = await request.get('/question/task/list', { params: { size: 20 } })
     const newTasks = res.records
     tasks.value = newTasks
 
-    // --- 状态检测逻辑开始 ---
     let needRefresh = false
     const currentRunningIds = new Set<number>()
 
     newTasks.forEach((t: any) => {
-      // 0:等待, 1:进行中
       if (t.status === 0 || t.status === 1) {
         currentRunningIds.add(t.id)
-      }
-      // 2:已完成
-      else if (t.status === 2) {
-        // 如果该任务之前在运行中，现在完成了
+      } else if (t.status === 2) {
         if (previousRunningTaskIds.value.has(t.id)) {
           needRefresh = true
         }
@@ -699,22 +695,19 @@ const fetchTasks = async () => {
 
     if (needRefresh) {
       ElMessage.success('AI 出题任务已完成，题目列表已自动更新')
-      fetchData() // 自动刷新题目列表
+      fetchData()
     }
 
-    // 更新"正在运行的任务"快照
     previousRunningTaskIds.value = currentRunningIds
-    // --- 状态检测逻辑结束 ---
 
   } catch (error) { console.error(error) }
 }
 
-// 清除任务逻辑
 const handleClearTasks = async () => {
   try {
     await request.delete('/question/task/clear')
     ElMessage.success('历史任务已清除')
-    fetchTasks() // 刷新列表
+    fetchTasks()
   } catch (error) {
     console.error(error)
   }
@@ -826,16 +819,44 @@ const submitManual = async () => {
   })
 }
 
-// 5. 导入功能逻辑
+// 5. 导入功能逻辑 (Update for Batch and Template Download)
 const openImportDialog = () => {
   importDialog.visible = true
   importDialog.courseId = queryParams.courseId
+  importDialog.uploadingCount = 0
 }
 
-const downloadTemplate = () => {
-  ElMessage.info('模板下载功能待实现，请联系管理员获取标准 Excel 模板')
+// 核心修复：实现下载功能
+const downloadTemplate = async () => {
+  try {
+    const response = await request.get('/question/template', {
+      responseType: 'blob'
+    })
+
+    // 创建 blob URL
+    const blob = new Blob([response as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+
+    // 创建隐藏的 a 标签触发下载
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '题目导入模板.xlsx'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    // 清理
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(link)
+
+    ElMessage.success('模板下载成功')
+  } catch (error) {
+    ElMessage.error('模板下载失败')
+    console.error(error)
+  }
 }
 
+// 修改：支持并发上传计数
 const handleImport = async (options: any) => {
   if (!importDialog.courseId) {
     ElMessage.warning('请先选择导入的目标课程')
@@ -847,17 +868,25 @@ const handleImport = async (options: any) => {
   formData.append('courseId', importDialog.courseId.toString())
 
   importDialog.uploading = true
+  importDialog.uploadingCount++ // 计数加一
+
   try {
     await request.post('/question/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    ElMessage.success('导入成功！')
-    importDialog.visible = false
+    ElMessage.success(`文件 ${options.file.name} 导入成功！`)
+    // 每个文件成功后都刷新列表，保证实时性
     fetchData()
   } catch (error: any) {
-    ElMessage.error(error.message || '导入失败')
+    ElMessage.error(`文件 ${options.file.name} 导入失败: ${error.message || '未知错误'}`)
   } finally {
-    importDialog.uploading = false
+    importDialog.uploadingCount--
+    // 当所有文件都传完了，更新状态
+    if (importDialog.uploadingCount <= 0) {
+      importDialog.uploading = false
+      importDialog.uploadingCount = 0
+      // 注意：批量上传通常不建议自动关闭弹窗，以便用户查看哪些成功哪些失败
+    }
   }
 }
 
