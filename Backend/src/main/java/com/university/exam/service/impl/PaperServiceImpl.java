@@ -36,32 +36,24 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long randomCreate(RandomPaperRequest req, Long userId) {
-        // 1. 预检查与总分计算
+        // 1. 初始化
         BigDecimal totalScore = BigDecimal.ZERO;
         List<PaperQuestion> paperQuestions = new ArrayList<>();
         int sortOrder = 1;
 
-        // 临时创建 Paper 对象先保存，获取 ID
-        Paper paper = new Paper();
-        paper.setCourseId(req.getCourseId());
-        paper.setTitle(req.getTitle());
-        paper.setDuration(req.getDuration() != null ? req.getDuration() : 120);
-        paper.setStatus((byte) 1); // 默认启用
-        paper.setDifficulty((byte) 2); // 默认中等，后续可优化根据题目计算
-        paper.setCreateBy(userId);
-        paper.setUpdateBy(userId);
-        paper.setCreateTime(LocalDateTime.now());
-        paper.setUpdateTime(LocalDateTime.now());
-        
         // 2. 遍历规则抽题
         for (RuleItem rule : req.getRules()) {
             if (rule.getCount() <= 0) continue;
+            // 校验单题分数合理性
+            if (rule.getScore().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BizException(400, "单题分值必须大于0");
+            }
 
             // 随机抽取
             List<Question> questions = questionService.getRandomQuestions(req.getCourseId(), rule.getType(), rule.getCount());
             
             if (questions.size() < rule.getCount()) {
-                throw new BizException(400, String.format("题库不足：类型[%s]需要%d题，仅有%d题", 
+                throw new BizException(400, String.format("题库资源不足：类型[%s]需要%d题，仅有%d题", 
                         getTypeName(rule.getType()), rule.getCount(), questions.size()));
             }
 
@@ -78,21 +70,28 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
             }
         }
 
-        // 3. 完善并保存试卷
+        // 3. 业务逻辑核心校验
+        validatePaperScore(totalScore, req.getPassScore());
+
+        // 4. 保存试卷
+        Paper paper = new Paper();
+        paper.setCourseId(req.getCourseId());
+        paper.setTitle(req.getTitle());
+        paper.setDuration(req.getDuration());
         paper.setTotalScore(totalScore);
-        // 及格分默认 60%
-        paper.setPassScore(totalScore.multiply(new BigDecimal("0.6")));
+        // 如果前端没传及格分，默认总分60%
+        paper.setPassScore(req.getPassScore() != null ? req.getPassScore() : totalScore.multiply(new BigDecimal("0.6")));
+        paper.setStatus((byte) 1);
+        paper.setDifficulty((byte) 2);
+        paper.setCreateBy(userId);
+        paper.setUpdateBy(userId);
+        paper.setCreateTime(LocalDateTime.now());
+        paper.setUpdateTime(LocalDateTime.now());
+        
         this.save(paper);
 
-        // 4. 保存关联关系
-        for (PaperQuestion pq : paperQuestions) {
-            pq.setPaperId(paper.getId());
-            pq.setCreateBy(userId);
-            pq.setUpdateBy(userId);
-            pq.setCreateTime(LocalDateTime.now());
-            pq.setUpdateTime(LocalDateTime.now());
-        }
-        paperQuestionService.saveBatch(paperQuestions);
+        // 5. 保存关联关系
+        savePaperQuestions(paper.getId(), paperQuestions, userId);
 
         return paper.getId();
     }
@@ -107,6 +106,11 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
 
         // 2. 遍历题目列表构建关联
         for (QuestionItem item : req.getQuestionList()) {
+            // 校验分数
+            if (item.getScore().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BizException(400, "题目分值必须大于0");
+            }
+
             PaperQuestion pq = new PaperQuestion();
             pq.setQuestionId(item.getQuestionId());
             pq.setScore(item.getScore());
@@ -116,13 +120,16 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
             totalScore = totalScore.add(item.getScore());
         }
 
-        // 3. 保存试卷
+        // 3. 业务逻辑核心校验
+        validatePaperScore(totalScore, req.getPassScore());
+
+        // 4. 保存试卷
         Paper paper = new Paper();
         paper.setCourseId(req.getCourseId());
         paper.setTitle(req.getTitle());
-        paper.setDuration(req.getDuration() != null ? req.getDuration() : 120);
+        paper.setDuration(req.getDuration());
         paper.setTotalScore(totalScore);
-        paper.setPassScore(totalScore.multiply(new BigDecimal("0.6")));
+        paper.setPassScore(req.getPassScore() != null ? req.getPassScore() : totalScore.multiply(new BigDecimal("0.6")));
         paper.setStatus((byte) 1);
         paper.setDifficulty((byte) 2);
         paper.setCreateBy(userId);
@@ -132,17 +139,45 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
         
         this.save(paper);
 
-        // 4. 保存关联
-        for (PaperQuestion pq : paperQuestions) {
-            pq.setPaperId(paper.getId());
+        // 5. 保存关联
+        savePaperQuestions(paper.getId(), paperQuestions, userId);
+
+        return paper.getId();
+    }
+
+    /**
+     * 校验试卷分数逻辑
+     */
+    private void validatePaperScore(BigDecimal totalScore, BigDecimal passScore) {
+        // 1. 总分必须大于0
+        if (totalScore.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BizException(400, "试卷总分必须大于0，请添加题目");
+        }
+
+        // 2. 如果指定了及格分，及格分必须 <= 总分
+        if (passScore != null) {
+            if (passScore.compareTo(totalScore) > 0) {
+                throw new BizException(400, String.format("及格分数(%.1f)不能高于试卷总分(%.1f)", 
+                        passScore.doubleValue(), totalScore.doubleValue()));
+            }
+            if (passScore.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BizException(400, "及格分数不能为负数");
+            }
+        }
+    }
+
+    /**
+     * 批量保存题目关联
+     */
+    private void savePaperQuestions(Long paperId, List<PaperQuestion> list, Long userId) {
+        for (PaperQuestion pq : list) {
+            pq.setPaperId(paperId);
             pq.setCreateBy(userId);
             pq.setUpdateBy(userId);
             pq.setCreateTime(LocalDateTime.now());
             pq.setUpdateTime(LocalDateTime.now());
         }
-        paperQuestionService.saveBatch(paperQuestions);
-
-        return paper.getId();
+        paperQuestionService.saveBatch(list);
     }
 
     private String getTypeName(Integer type) {

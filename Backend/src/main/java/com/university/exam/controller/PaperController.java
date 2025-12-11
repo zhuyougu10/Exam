@@ -10,6 +10,7 @@ import com.university.exam.entity.Paper;
 import com.university.exam.service.CourseUserService;
 import com.university.exam.service.PaperService;
 import com.university.exam.service.PublishService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,7 +26,7 @@ import java.util.stream.Collectors;
  * 试卷管理控制器
  *
  * @author MySQL数据库架构师
- * @version 1.0.0
+ * @version 1.1.0 (增加数据强校验)
  * @since 2025-12-11
  */
 @RestController
@@ -42,7 +43,7 @@ public class PaperController {
      */
     @PostMapping("/random-create")
     @PreAuthorize("hasAnyRole(2, 3)")
-    public Result<?> randomCreate(@RequestBody PaperService.RandomPaperRequest request) {
+    public Result<?> randomCreate(@Valid @RequestBody PaperService.RandomPaperRequest request) {
         Long userId = getCurrentUserId();
         Long paperId = paperService.randomCreate(request, userId);
         return Result.success(Map.of("id", paperId), "智能组卷成功");
@@ -53,7 +54,7 @@ public class PaperController {
      */
     @PostMapping("/manual-create")
     @PreAuthorize("hasAnyRole(2, 3)")
-    public Result<?> manualCreate(@RequestBody PaperService.ManualPaperRequest request) {
+    public Result<?> manualCreate(@Valid @RequestBody PaperService.ManualPaperRequest request) {
         Long userId = getCurrentUserId();
         Long paperId = paperService.manualCreate(request, userId);
         return Result.success(Map.of("id", paperId), "手动组卷成功");
@@ -81,10 +82,10 @@ public class PaperController {
         // 权限控制
         if (role == 2) { // 教师：查看所教课程的试卷 或 自己创建的
             List<Long> courseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
-                    .eq(CourseUser::getUserId, userId)
-                    .eq(CourseUser::getRole, 2))
+                            .eq(CourseUser::getUserId, userId)
+                            .eq(CourseUser::getRole, 2))
                     .stream().map(CourseUser::getCourseId).collect(Collectors.toList());
-            
+
             if (courseIds.isEmpty()) {
                 query.eq(Paper::getCreateBy, userId);
             } else {
@@ -110,11 +111,11 @@ public class PaperController {
         if (isPublished) {
             throw new BizException(400, "该试卷已发布过考试，无法删除");
         }
-        
+
         Long userId = getCurrentUserId();
         Paper paper = paperService.getById(id);
         if (paper == null) throw new BizException(404, "试卷不存在");
-        
+
         // 权限检查
         if (getCurrentUserRole() == 2 && !paper.getCreateBy().equals(userId)) {
             throw new BizException(403, "无权删除非本人创建的试卷");
@@ -124,7 +125,7 @@ public class PaperController {
         paper.setUpdateBy(userId);
         paper.setUpdateTime(LocalDateTime.now());
         paperService.removeById(id);
-        
+
         return Result.success("删除成功");
     }
 

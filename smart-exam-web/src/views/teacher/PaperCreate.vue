@@ -44,7 +44,9 @@
               </el-col>
               <el-col :span="12">
                 <el-form-item label="及格分数" prop="passScore">
-                  <el-input-number v-model="baseForm.passScore" :min="0" :max="100" class="w-full" />
+                  <el-input-number v-model="baseForm.passScore" :min="0" :max="1000" class="w-full" placeholder="后续会自动校验">
+                    <template #suffix>分</template>
+                  </el-input-number>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -75,6 +77,9 @@
               <span class="font-bold">组卷策略配置</span>
               <div class="text-sm">
                 当前总分: <span class="text-xl font-bold text-indigo-600">{{ totalScore }}</span> 分
+                <span v-if="baseForm.passScore > totalScore" class="text-red-500 text-xs ml-2">
+                  (警告: 及格分 {{baseForm.passScore}} > 总分)
+                </span>
               </div>
             </div>
           </template>
@@ -86,7 +91,7 @@
               class="mb-6"
           >
             <template #title>
-              系统将根据下方配置的规则，从题库中随机抽取题目。请确保题库中有足够数量的题目，否则可能组卷失败。
+              系统将根据下方配置的规则，从题库中随机抽取题目。请确保题库中有足够数量的题目。
             </template>
           </el-alert>
 
@@ -135,7 +140,6 @@
       </div>
 
       <!-- 步骤 2: 题目挑选 (手动组卷) -->
-      <!-- 使用 Element Plus 栅格系统替换 Tailwind Grid，防止布局堆叠 -->
       <div v-show="activeStep === 1 && baseForm.mode === 'manual'" class="manual-container">
         <el-row :gutter="24" class="h-full-row">
 
@@ -206,7 +210,12 @@
               <template #header>
                 <div class="flex-between">
                   <span class="font-bold text-indigo-700">已选题目 ({{ manualQuestions.length }})</span>
-                  <span class="text-sm font-bold">总分: <span class="text-indigo-600 text-lg">{{ totalScore }}</span></span>
+                  <div class="flex flex-col items-end">
+                    <span class="text-sm font-bold">总分: <span class="text-indigo-600 text-lg">{{ totalScore }}</span></span>
+                    <span v-if="baseForm.passScore > totalScore" class="text-red-500 text-xs">
+                      及格分{{baseForm.passScore}} > 总分!
+                    </span>
+                  </div>
                 </div>
               </template>
 
@@ -264,6 +273,15 @@
               <span>总分: {{ totalScore }}分</span>
               <span>及格: {{ baseForm.passScore }}分</span>
             </div>
+            <!-- 再次显示警告 -->
+            <el-alert
+                v-if="baseForm.passScore > totalScore"
+                title="参数错误：及格分数高于总分，无法提交！"
+                type="error"
+                show-icon
+                class="mt-4"
+                :closable="false"
+            />
           </div>
 
           <!-- 智能组卷预览 -->
@@ -325,7 +343,14 @@
           <el-button v-if="activeStep < 2" type="primary" @click="nextStep">
             下一步 <el-icon class="el-icon--right"><ArrowRight /></el-icon>
           </el-button>
-          <el-button v-if="activeStep === 2" type="success" :loading="submitting" @click="submitPaper" :icon="Check">
+          <el-button
+              v-if="activeStep === 2"
+              type="success"
+              :loading="submitting"
+              :disabled="baseForm.passScore > totalScore || totalScore <= 0"
+              @click="submitPaper"
+              :icon="Check"
+          >
             确认创建试卷
           </el-button>
         </div>
@@ -363,8 +388,14 @@ const baseForm = reactive({
 const baseRules = {
   title: [{ required: true, message: '请输入试卷标题', trigger: 'blur' }],
   courseId: [{ required: true, message: '请选择所属课程', trigger: 'change' }],
-  duration: [{ required: true, message: '请输入考试时长', trigger: 'blur' }],
-  passScore: [{ required: true, message: '请输入及格分数', trigger: 'blur' }]
+  duration: [
+    { required: true, message: '请输入考试时长', trigger: 'blur' },
+    { type: 'number', min: 1, max: 480, message: '时长范围 1-480 分钟', trigger: 'blur' }
+  ],
+  passScore: [
+    { required: true, message: '请输入及格分数', trigger: 'blur' },
+    { type: 'number', min: 0, message: '及格分不能为负数', trigger: 'blur' }
+  ]
 }
 
 // 步骤2：智能组卷规则
@@ -426,6 +457,7 @@ const getCourseName = (id?: number) => {
 
 // 2. 步骤控制
 const nextStep = async () => {
+  // 步骤0 -> 步骤1 (基本信息校验)
   if (activeStep.value === 0) {
     if (!baseFormRef.value) return
     await baseFormRef.value.validate((valid: boolean) => {
@@ -437,11 +469,21 @@ const nextStep = async () => {
         activeStep.value++
       }
     })
-  } else if (activeStep.value === 1) {
+  }
+  // 步骤1 -> 步骤2 (题目/规则配置 -> 预览)
+  else if (activeStep.value === 1) {
+    // 校验1: 总分必须 > 0
     if (totalScore.value <= 0) {
       ElMessage.warning('试卷总分不能为0，请添加题目或规则')
       return
     }
+
+    // 校验2: 及格分不能大于总分
+    if (baseForm.passScore > totalScore.value) {
+      ElMessage.error(`参数不合理：及格分 (${baseForm.passScore}) 不能高于总分 (${totalScore.value})`)
+      return
+    }
+
     activeStep.value++
   }
 }
@@ -501,6 +543,12 @@ const getDefaultScore = (type: number) => {
 
 // 5. 提交创建
 const submitPaper = async () => {
+  // 最终防线
+  if (baseForm.passScore > totalScore.value) {
+    ElMessage.error('及格分设置过高，请返回第一步修改或增加题目分值')
+    return
+  }
+
   submitting.value = true
   try {
     const url = baseForm.mode === 'random' ? '/paper/random-create' : '/paper/manual-create'
@@ -509,7 +557,8 @@ const submitPaper = async () => {
     const payload: any = {
       courseId: baseForm.courseId,
       title: baseForm.title,
-      duration: baseForm.duration
+      duration: baseForm.duration,
+      passScore: baseForm.passScore // 传递及格分
     }
 
     if (baseForm.mode === 'random') {
@@ -528,7 +577,6 @@ const submitPaper = async () => {
     router.push('/teacher/paper-list')
   } catch (error: any) {
     // 拦截器已处理弹窗，此处只负责关闭loading
-    // 如果需要特殊处理，可以使用 error.message
     console.error('Create paper failed:', error)
   } finally {
     submitting.value = false
