@@ -1,9 +1,10 @@
 <template>
-  <!-- 外层容器：使用 Flex + 内联样式确保布局稳健，防止样式编译错误导致白屏 -->
   <div
       class="app-container"
       style="display: flex; flex-direction: column; height: calc(100vh - 84px); padding: 24px; background-color: #f9fafb; box-sizing: border-box; overflow: hidden;"
   >
+    <!-- 外层容器：使用 Flex + 内联样式确保布局稳健，防止样式编译错误导致白屏 -->
+
     <!-- 顶部筛选栏 -->
     <div style="flex-shrink: 0; background: #fff; padding: 16px 20px; border-radius: 8px; border: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
       <div style="display: flex; align-items: center; gap: 12px;">
