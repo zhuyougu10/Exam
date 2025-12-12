@@ -1,8 +1,8 @@
 <template>
   <el-container class="layout-container">
     <el-aside
-      :width="isCollapse ? '64px' : '240px'"
-      class="layout-sidebar"
+        :width="isCollapse ? '64px' : '240px'"
+        class="layout-sidebar"
     >
       <div class="sidebar-logo-container">
         <transition name="sidebarLogoFade">
@@ -20,15 +20,15 @@
 
       <el-scrollbar>
         <el-menu
-          :default-active="activeMenu"
-          :collapse="isCollapse"
-          :unique-opened="true"
-          background-color="#001529"
-          text-color="rgba(255, 255, 255, 0.7)"
-          active-text-color="#ffffff"
-          class="sidebar-menu"
-          :collapse-transition="false"
-          router
+            :default-active="activeMenu"
+            :collapse="isCollapse"
+            :unique-opened="true"
+            background-color="#001529"
+            text-color="rgba(255, 255, 255, 0.7)"
+            active-text-color="#ffffff"
+            class="sidebar-menu"
+            :collapse-transition="false"
+            router
         >
           <template v-if="hasRole('student')">
             <div class="menu-label" v-if="!isCollapse">STUDENT</div>
@@ -65,7 +65,8 @@
                 <el-icon><DocumentCopy /></el-icon>
                 <span>考务管理</span>
               </template>
-              <el-menu-item index="/teacher/paper-create">智能组卷</el-menu-item>
+              <!-- 修改点：入口改为 PaperList，文案改为 试卷管理 -->
+              <el-menu-item index="/teacher/paper-list">试卷管理</el-menu-item>
               <el-menu-item index="/teacher/exam-publish">考试发布</el-menu-item>
               <el-menu-item index="/teacher/review-console">AI辅助阅卷</el-menu-item>
               <el-menu-item index="/teacher/analysis">成绩统计</el-menu-item>
@@ -73,7 +74,7 @@
           </template>
 
           <template v-if="hasRole('admin')">
-             <div class="menu-label" v-if="!isCollapse">SYSTEM</div>
+            <div class="menu-label" v-if="!isCollapse">SYSTEM</div>
             <el-menu-item index="/admin/user-manage">
               <el-icon><UserFilled /></el-icon>
               <template #title>用户管理</template>
@@ -124,7 +125,7 @@
 
           <el-tooltip content="全屏" effect="dark" placement="bottom">
             <div class="right-menu-item hover-effect">
-               <el-icon :size="20"><FullScreen /></el-icon>
+              <el-icon :size="20"><FullScreen /></el-icon>
             </div>
           </el-tooltip>
 
@@ -238,17 +239,17 @@ const handleCommand = (command: string) => {
   display: flex;
   flex-direction: column;
   z-index: 1001;
-  
+
   :deep(.el-menu) {
     border-right: none;
   }
-  
+
   /* 美化滚动条 */
   :deep(.el-scrollbar__bar.is-vertical) {
     width: 4px;
     right: 2px;
   }
-  
+
   :deep(.el-scrollbar__thumb) {
     background-color: rgba(255, 255, 255, 0.2);
   }
@@ -271,7 +272,7 @@ const handleCommand = (command: string) => {
     display: flex;
     align-items: center;
     text-decoration: none;
-    
+
     &.collapsed {
       justify-content: center;
     }
@@ -285,13 +286,13 @@ const handleCommand = (command: string) => {
       align-items: center;
       justify-content: center;
       margin-right: 12px;
-      
+
       .logo-icon {
         font-size: 20px;
         color: #fff;
       }
     }
-    
+
     .sidebar-logo-link.collapsed .logo-icon {
       font-size: 24px;
       color: #1890ff;
@@ -323,21 +324,21 @@ const handleCommand = (command: string) => {
 .sidebar-menu {
   :deep(.el-menu-item) {
     border-left: 4px solid transparent;
-    
+
     &:hover {
       background-color: rgba(255, 255, 255, 0.05) !important;
     }
-    
+
     &.is-active {
       background-color: #1890ff !important;
       border-left-color: #fff;
-      
+
       .el-icon {
         color: #fff;
       }
     }
   }
-  
+
   :deep(.el-sub-menu__title:hover) {
     background-color: rgba(255, 255, 255, 0.05) !important;
   }
@@ -373,11 +374,11 @@ const handleCommand = (command: string) => {
   align-items: center;
   cursor: pointer;
   transition: all 0.3s;
-  
+
   &:hover {
     background: rgba(0, 0, 0, 0.025);
   }
-  
+
   .is-active {
     transform: rotate(180deg);
   }
@@ -389,7 +390,7 @@ const handleCommand = (command: string) => {
   align-items: center;
   height: 100%;
   padding-right: 24px;
-  
+
   .right-menu-item {
     display: flex;
     align-items: center;
@@ -399,7 +400,7 @@ const handleCommand = (command: string) => {
     color: #5a5e66;
     transition: all 0.3s;
     border-radius: 4px;
-    
+
     &:hover {
       background: rgba(0, 0, 0, 0.025);
     }
@@ -408,7 +409,7 @@ const handleCommand = (command: string) => {
 
 .avatar-container {
   margin-left: 12px;
-  
+
   .avatar-wrapper {
     display: flex;
     align-items: center;
@@ -416,33 +417,33 @@ const handleCommand = (command: string) => {
     padding: 4px 8px;
     border-radius: 20px;
     transition: all 0.3s;
-    
+
     &:hover {
       background: rgba(0, 0, 0, 0.025);
     }
-    
+
     .user-avatar {
       font-weight: bold;
       font-size: 16px;
-      
+
       &.role-admin { background-color: #f56c6c; }
       &.role-teacher { background-color: #e6a23c; }
       &.role-student { background-color: #409eff; }
     }
-    
+
     .user-info {
       display: flex;
       flex-direction: column;
       margin: 0 8px;
       text-align: left;
-      
+
       .user-name {
         font-size: 14px;
         font-weight: 500;
         color: #303133;
         line-height: 1.2;
       }
-      
+
       .user-role {
         font-size: 11px;
         color: #909399;

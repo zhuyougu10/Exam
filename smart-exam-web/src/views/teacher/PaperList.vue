@@ -1,114 +1,81 @@
 <template>
-  <div class="app-container p-6 bg-gray-50 min-h-[calc(100vh-64px)]">
-    <el-card shadow="never" class="border-0 rounded-xl mb-4">
-      <div class="flex flex-wrap justify-between items-center gap-4">
-        <div class="flex items-center gap-3">
-          <div class="p-2 bg-blue-100 rounded-lg text-blue-600">
-            <el-icon size="20"><DocumentCopy /></el-icon>
-          </div>
-          <div>
-            <h2 class="text-lg font-bold text-gray-800">试卷管理</h2>
-            <p class="text-xs text-gray-500">查看、预览及发布试卷</p>
-          </div>
+  <!-- 外层容器：使用 Flex + 内联样式确保布局稳健，防止样式编译错误导致白屏 -->
+  <div
+      class="app-container"
+      style="display: flex; flex-direction: column; height: calc(100vh - 84px); padding: 24px; background-color: #f9fafb; box-sizing: border-box; overflow: hidden;"
+  >
+    <!-- 顶部筛选栏 -->
+    <div style="flex-shrink: 0; background: #fff; padding: 16px 20px; border-radius: 8px; border: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="background-color: #e0e7ff; padding: 8px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+          <el-icon size="20" color="#4f46e5"><DocumentCopy /></el-icon>
         </div>
-
-        <div class="flex flex-wrap items-center gap-3">
-          <el-select
-              v-model="queryParams.courseId"
-              placeholder="按课程筛选"
-              clearable
-              filterable
-              class="w-48"
-              @change="handleSearch"
-          >
-            <el-option
-                v-for="item in courseOptions"
-                :key="item.id"
-                :label="item.courseName"
-                :value="item.id"
-            />
-          </el-select>
-          <el-input
-              v-model="queryParams.title"
-              placeholder="搜索试卷标题"
-              prefix-icon="Search"
-              clearable
-              class="w-60"
-              @keyup.enter="handleSearch"
-              @clear="handleSearch"
-          />
-          <el-button type="primary" icon="Plus" @click="$router.push('/teacher/paper-create')">新建试卷</el-button>
+        <div>
+          <div style="font-weight: bold; font-size: 16px; color: #1f2937;">试卷管理</div>
+          <div style="font-size: 12px; color: #6b7280;">查看、预览及管理所有试卷</div>
         </div>
       </div>
-    </el-card>
 
-    <el-card shadow="never" class="border-0 rounded-xl table-card">
+      <div style="display: flex; gap: 12px;">
+        <el-select v-model="queryParams.courseId" placeholder="按课程筛选" clearable style="width: 180px;" @change="handleSearch">
+          <el-option v-for="item in courseOptions" :key="item.id" :label="item.courseName" :value="item.id" />
+        </el-select>
+        <el-input v-model="queryParams.title" placeholder="搜索试卷标题" prefix-icon="Search" clearable style="width: 240px;" @keyup.enter="handleSearch" @clear="handleSearch" />
+        <!-- 跳转到智能组卷页面 -->
+        <el-button type="primary" color="#4f46e5" :icon="Plus" @click="$router.push('/teacher/paper-create')">智能组卷</el-button>
+      </div>
+    </div>
+
+    <!-- 表格区域 -->
+    <div style="flex: 1; overflow: hidden; background: #fff; border-radius: 8px; border: 1px solid #e5e7eb; display: flex; flex-direction: column;">
       <el-table
           v-loading="loading"
           :data="paperList"
-          stripe
-          style="width: 100%"
+          style="width: 100%; flex: 1;"
+          height="100%"
           :header-cell-style="{ background: '#f9fafb', color: '#374151', fontWeight: '600' }"
+          stripe
       >
         <el-table-column prop="id" label="ID" width="80" align="center" />
-
         <el-table-column prop="title" label="试卷标题" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="font-medium text-gray-700">{{ row.title }}</span>
+            <span style="font-weight: 500; color: #1f2937;">{{ row.title }}</span>
           </template>
         </el-table-column>
-
-        <el-table-column label="所属课程" min-width="150" show-overflow-tooltip>
+        <el-table-column label="所属课程" width="160" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag type="info" effect="plain" class="border-0 bg-gray-100 text-gray-600">
+            <el-tag type="info" effect="plain" style="border: 0; background-color: #f3f4f6; color: #4b5563;">
               {{ getCourseName(row.courseId) }}
             </el-tag>
           </template>
         </el-table-column>
-
         <el-table-column label="总分 / 及格" width="140" align="center">
           <template #default="{ row }">
-            <span class="text-gray-900 font-bold">{{ row.totalScore }}</span>
-            <span class="text-gray-400 mx-1">/</span>
-            <span class="text-gray-500">{{ row.passScore }}</span>
+            <span style="font-weight: bold; color: #111827;">{{ row.totalScore }}</span>
+            <span style="color: #9ca3af; margin: 0 4px;">/</span>
+            <span style="color: #6b7280;">{{ row.passScore }}</span>
           </template>
         </el-table-column>
-
         <el-table-column prop="duration" label="时长" width="100" align="center">
-          <template #default="{ row }">
-            {{ row.duration }} 分钟
-          </template>
+          <template #default="{ row }">{{ row.duration }} 分钟</template>
         </el-table-column>
-
         <el-table-column prop="difficulty" label="难度" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="getDifficultyType(row.difficulty)" size="small">
-              {{ getDifficultyLabel(row.difficulty) }}
-            </el-tag>
+            <el-tag size="small" :type="getDifficultyType(row.difficulty)" effect="light">{{ getDifficultyLabel(row.difficulty) }}</el-tag>
           </template>
         </el-table-column>
-
         <el-table-column prop="createTime" label="创建时间" width="160" align="center">
           <template #default="{ row }">
-            <span class="text-xs text-gray-500">{{ formatTime(row.createTime) }}</span>
+            <span style="font-size: 12px; color: #6b7280;">{{ formatTime(row.createTime) }}</span>
           </template>
         </el-table-column>
-
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button type="success" link icon="Timer" @click="handlePublish(row)">
-              发布
-            </el-button>
+            <el-button type="primary" link icon="Timer" @click="handlePublish(row)">发布</el-button>
             <el-divider direction="vertical" />
-            <el-button type="primary" link icon="View" @click="handlePreview(row)">
-              预览
-            </el-button>
+            <el-button type="primary" link icon="View" @click="handlePreview(row)">预览</el-button>
             <el-divider direction="vertical" />
-            <el-popconfirm
-                title="确定删除该试卷吗？"
-                width="200"
-                @confirm="handleDelete(row)"
-            >
+            <el-popconfirm title="确定删除该试卷吗？" @confirm="handleDelete(row)" width="200">
               <template #reference>
                 <el-button type="danger" link icon="Delete">删除</el-button>
               </template>
@@ -117,7 +84,8 @@
         </el-table-column>
       </el-table>
 
-      <div class="flex justify-end mt-4">
+      <!-- 分页 -->
+      <div style="padding: 12px 20px; border-top: 1px solid #f3f4f6; display: flex; justify-content: flex-end;">
         <el-pagination
             v-model:current-page="queryParams.page"
             v-model:page-size="queryParams.size"
@@ -125,12 +93,13 @@
             :page-sizes="[10, 20, 50]"
             layout="total, sizes, prev, pager, next, jumper"
             background
-            @size-change="handleSizeChange"
-            @current-change="handleCurrentChange"
+            @size-change="fetchData"
+            @current-change="fetchData"
         />
       </div>
-    </el-card>
+    </div>
 
+    <!-- 简易预览弹窗 -->
     <el-dialog v-model="previewVisible" title="试卷预览" width="500px">
       <el-descriptions :column="1" border>
         <el-descriptions-item label="试卷ID">{{ currentPaper.id }}</el-descriptions-item>
@@ -139,8 +108,8 @@
         <el-descriptions-item label="及格分">{{ currentPaper.passScore }}</el-descriptions-item>
         <el-descriptions-item label="难度">{{ getDifficultyLabel(currentPaper.difficulty) }}</el-descriptions-item>
       </el-descriptions>
-      <div class="mt-4 text-center text-gray-400 text-sm">
-        （完整预览功能将在答题界面实现）
+      <div style="margin-top: 20px; text-align: center; color: #9ca3af; font-size: 13px;">
+        ( 完整预览请在“考试发布”或“答题”端查看 )
       </div>
     </el-dialog>
   </div>
@@ -164,7 +133,7 @@ const currentPaper = ref<any>({})
 const queryParams = reactive({
   page: 1,
   size: 10,
-  courseId: undefined as number | undefined,
+  courseId: undefined,
   title: ''
 })
 
@@ -196,24 +165,8 @@ const handleSearch = () => {
   fetchData()
 }
 
-const handleSizeChange = (val: number) => {
-  queryParams.size = val
-  fetchData()
-}
-
-const handleCurrentChange = (val: number) => {
-  queryParams.page = val
-  fetchData()
-}
-
 const handlePublish = (row: any) => {
-  router.push({
-    path: '/teacher/exam-publish',
-    query: {
-      paperId: row.id,
-      paperTitle: row.title
-    }
-  })
+  router.push({ path: '/teacher/exam-publish', query: { paperId: row.id, paperTitle: row.title } })
 }
 
 const handlePreview = (row: any) => {
@@ -226,32 +179,15 @@ const handleDelete = async (row: any) => {
     await request.delete(`/paper/${row.id}`)
     ElMessage.success('删除成功')
     fetchData()
-  } catch (error) {
-    // error handled by interceptor
-  }
+  } catch (error) { }
 }
 
-// 辅助方法
 const getCourseName = (id: number) => {
-  const course = courseOptions.value.find(c => c.id === id)
-  return course ? course.courseName : `课程ID:${id}`
+  const c = courseOptions.value.find(i => i.id === id)
+  return c ? c.courseName : `课程ID:${id}`
 }
 
-const getDifficultyLabel = (diff: number) => {
-  return { 1: '简单', 2: '中等', 3: '困难' }[diff] || '未知'
-}
-
-const getDifficultyType = (diff: number) => {
-  return { 1: 'success', 2: 'warning', 3: 'danger' }[diff] || 'info'
-}
-
-const formatTime = (time: string) => {
-  return time ? time.replace('T', ' ').substring(0, 16) : '-'
-}
+const getDifficultyLabel = (diff: number) => ({ 1: '简单', 2: '中等', 3: '困难' } as any)[diff] || '未知'
+const getDifficultyType = (diff: number) => ({ 1: 'success', 2: 'warning', 3: 'danger' } as any)[diff] || 'info'
+const formatTime = (time: string) => time ? time.replace('T', ' ').substring(0, 16) : '-'
 </script>
-
-<style scoped>
-.table-card {
-  min-height: 500px;
-}
-</style>
