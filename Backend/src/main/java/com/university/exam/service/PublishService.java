@@ -1,5 +1,6 @@
 package com.university.exam.service;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.university.exam.entity.Publish;
 import com.baomidou.mybatisplus.extension.service.IService;
 import lombok.Data;
@@ -36,8 +37,13 @@ public interface PublishService extends IService<Publish> {
         private Long paperId;
         private String title;
         private List<Long> targetDeptIds; // 目标班级/部门
+
+        @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
         private LocalDateTime startTime;
+
+        @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
         private LocalDateTime endTime;
+
         private Integer limitCount; // 限制次数
         private String password;    // 考试密码(可选)
     }

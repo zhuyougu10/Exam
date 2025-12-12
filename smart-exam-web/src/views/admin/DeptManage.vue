@@ -12,7 +12,16 @@
               class="filter-input"
               @input="handleFilter"
           />
-          <el-button type="info" plain icon="Sort" @click="toggleExpandAll">
+
+          <!-- 新增：按类型筛选 -->
+          <el-radio-group v-model="filterCategory" @change="handleFilter" class="ml-4">
+            <el-radio-button :value="0">全部</el-radio-button>
+            <el-radio-button :value="1">学院</el-radio-button>
+            <el-radio-button :value="2">系/专业</el-radio-button>
+            <el-radio-button :value="3">班级</el-radio-button>
+          </el-radio-group>
+
+          <el-button type="info" plain icon="Sort" @click="toggleExpandAll" class="ml-4">
             {{ isExpandAll ? '全部折叠' : '全部展开' }}
           </el-button>
         </div>
@@ -39,25 +48,26 @@
         <el-table-column prop="deptName" label="部门名称" min-width="260">
           <template #default="scope">
             <div class="dept-name-cell">
-              <el-icon :class="['folder-icon', scope.row.children?.length ? 'has-child' : '']">
-                <component :is="scope.row.children?.length ? 'FolderOpened' : 'Document'" />
+              <!-- 根据 category 显示不同图标 -->
+              <el-icon :class="getCategoryIconClass(scope.row.category)">
+                <component :is="getCategoryIcon(scope.row.category)" />
               </el-icon>
               <span>{{ scope.row.deptName }}</span>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="sortOrder" label="排序" width="80" align="center">
+        <el-table-column prop="category" label="类型" width="100" align="center">
           <template #default="scope">
-            <el-tag type="info" size="small">{{ scope.row.sortOrder }}</el-tag>
+            <el-tag :type="getCategoryType(scope.row.category)" size="small" effect="plain">
+              {{ getCategoryLabel(scope.row.category) }}
+            </el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="status" label="状态" width="100" align="center">
+        <el-table-column prop="sortOrder" label="排序" width="80" align="center">
           <template #default="scope">
-            <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'" effect="plain">
-              {{ scope.row.status === 1 ? '正常' : '停用' }}
-            </el-tag>
+            <el-tag type="info" size="small">{{ scope.row.sortOrder }}</el-tag>
           </template>
         </el-table-column>
 
@@ -123,6 +133,16 @@
           </el-col>
 
           <el-col :span="12">
+            <el-form-item label="部门类型" prop="category">
+              <el-select v-model="form.category" placeholder="请选择类型" class="w-full">
+                <el-option label="学院" :value="1" />
+                <el-option label="系/专业" :value="2" />
+                <el-option label="班级" :value="3" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="12">
             <el-form-item label="显示排序" prop="sortOrder">
               <el-input-number v-model="form.sortOrder" controls-position="right" :min="0" class="w-full" />
             </el-form-item>
@@ -130,28 +150,25 @@
 
           <el-col :span="12">
             <el-form-item label="负责人" prop="leader">
-              <el-input v-model="form.leader" placeholder="请输入负责人" prefix-icon="User" />
-            </el-form-item>
-          </el-col>
-
-          <el-col :span="12">
-            <el-form-item label="联系电话" prop="phone">
-              <el-input v-model="form.phone" placeholder="请输入联系电话" prefix-icon="Phone" maxlength="11" />
-            </el-form-item>
-          </el-col>
-
-          <el-col :span="12">
-            <el-form-item label="邮箱" prop="email">
-              <el-input v-model="form.email" placeholder="请输入邮箱" prefix-icon="Message" maxlength="50" />
-            </el-form-item>
-          </el-col>
-
-          <el-col :span="12">
-            <el-form-item label="部门状态">
-              <el-radio-group v-model="form.status" class="w-full">
-                <el-radio-button :value="1">正常</el-radio-button>
-                <el-radio-button :value="0">停用</el-radio-button>
-              </el-radio-group>
+              <el-select
+                  v-model="form.leader"
+                  placeholder="请选择负责人"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :loading="userLoading"
+                  @focus="fetchUsers"
+              >
+                <el-option
+                    v-for="user in userOptions"
+                    :key="user.id"
+                    :label="user.realName"
+                    :value="user.realName"
+                >
+                  <span style="float: left">{{ user.realName }}</span>
+                  <span style="float: right; color: #8492a6; font-size: 13px">{{ user.username }}</span>
+                </el-option>
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -169,7 +186,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Search, Plus, Sort, Edit, Delete, User, FolderOpened, Document, Phone, Message } from '@element-plus/icons-vue';
+import { Search, Plus, Sort, Edit, Delete, User, FolderOpened, Document, School, Management, Grid } from '@element-plus/icons-vue';
 import request from '@/utils/request';
 
 // 状态定义
@@ -182,7 +199,13 @@ const title = ref('');
 const deptList = ref<any[]>([]);
 const deptOptions = ref<any[]>([]);
 const filterText = ref('');
+const filterCategory = ref(0); // 0-全部，1-学院，2-系，3-班级
 const rawDeptList = ref<any[]>([]);
+
+// 用户选择相关
+const userLoading = ref(false);
+const userOptions = ref<any[]>([]);
+const isUsersLoaded = ref(false);
 
 const deptFormRef = ref();
 
@@ -192,9 +215,7 @@ const initialForm = {
   deptName: undefined,
   sortOrder: 0,
   leader: undefined,
-  phone: undefined,
-  email: undefined,
-  status: 1
+  category: 1 // 默认为学院
 };
 
 const form = reactive({ ...initialForm });
@@ -203,7 +224,7 @@ const rules = {
   parentId: [{ required: true, message: "上级部门不能为空", trigger: "change" }],
   deptName: [{ required: true, message: "部门名称不能为空", trigger: "blur" }],
   sortOrder: [{ required: true, message: "显示排序不能为空", trigger: "blur" }],
-  email: [{ type: 'email', message: "请输入正确的邮箱地址", trigger: ["blur", "change"] }]
+  category: [{ required: true, message: "部门类型不能为空", trigger: "change" }]
 };
 
 const formatTime = (time: string) => {
@@ -222,26 +243,68 @@ const getList = async () => {
   }
 };
 
-const handleFilter = (val: string) => {
-  if (!val) {
+// 获取用户列表（用于选择负责人）
+const fetchUsers = async () => {
+  if (isUsersLoaded.value) return;
+
+  userLoading.value = true;
+  try {
+    const res: any = await request.get('/admin/user/list', {
+      params: { page: 1, size: 1000 }
+    });
+    userOptions.value = res.records || [];
+    isUsersLoaded.value = true;
+  } catch (error) {
+    console.error("获取用户列表失败", error);
+  } finally {
+    userLoading.value = false;
+  }
+};
+
+const handleFilter = () => {
+  // 如果没有筛选条件，还原原始数据
+  if (!filterText.value && filterCategory.value === 0) {
     deptList.value = rawDeptList.value;
     return;
   }
-  const filterTree = (data: any[], text: string): any[] => {
-    return data.filter(item => {
-      const match = item.deptName.includes(text);
+
+  // 递归过滤函数
+  const filterTree = (data: any[]): any[] => {
+    return data.reduce((acc, item) => {
+      // 1. 类型匹配 (如果选了全部(0)则忽略此条件)
+      const categoryMatch = filterCategory.value === 0 || item.category === filterCategory.value;
+
+      // 2. 名称匹配
+      const nameMatch = !filterText.value || item.deptName.includes(filterText.value);
+
+      // 3. 递归处理子节点
+      let filteredChildren: any[] = [];
       if (item.children && item.children.length > 0) {
-        const filteredChildren = filterTree(item.children, text);
-        if (filteredChildren.length > 0) {
-          item.children = filteredChildren;
-          return true;
-        }
+        filteredChildren = filterTree(item.children);
       }
-      return match;
-    });
+
+      // 逻辑：
+      // 如果当前节点匹配，则保留（哪怕子节点不匹配，也要显示该节点）
+      // 如果当前节点不匹配，但有匹配的子节点，则保留当前节点（作为路径展示）
+      if ((categoryMatch && nameMatch) || filteredChildren.length > 0) {
+        // 深拷贝避免影响原始数据引用
+        const newItem = { ...item };
+        if (filteredChildren.length > 0) {
+          newItem.children = filteredChildren;
+        } else {
+          // 如果是因为自身匹配保留的，但子节点被过滤光了，根据业务需求可能需要清空 children
+          // 这里为了展示完整树结构，保留空 children 也是合理的
+          newItem.children = undefined;
+        }
+        acc.push(newItem);
+      }
+
+      return acc;
+    }, [] as any[]);
   };
+
   const copyData = JSON.parse(JSON.stringify(rawDeptList.value));
-  deptList.value = filterTree(copyData, val);
+  deptList.value = filterTree(copyData);
 };
 
 const toggleExpandAll = () => {
@@ -265,6 +328,13 @@ const handleAdd = (row?: any) => {
   reset();
   if (row != undefined) {
     form.parentId = row.id;
+    // 智能预设子部门类型
+    if (row.category === 1) form.category = 2; // 父是学院 -> 子默认为系
+    else if (row.category === 2) form.category = 3; // 父是系 -> 子默认为班级
+    else form.category = 3;
+  } else {
+    form.parentId = 0 as any; // 根节点
+    form.category = 1; // 根节点默认为学院
   }
   open.value = true;
   title.value = "添加部门";
@@ -313,6 +383,31 @@ const handleDelete = async (row: any) => {
   }
 };
 
+// --- 辅助显示方法 ---
+const getCategoryLabel = (val: number) => {
+  const map: Record<number, string> = { 1: '学院', 2: '系/专业', 3: '班级' };
+  return map[val] || '未知';
+}
+
+const getCategoryType = (val: number) => {
+  const map: Record<number, string> = { 1: 'danger', 2: 'primary', 3: 'success' };
+  return map[val] || 'info';
+}
+
+const getCategoryIcon = (val: number) => {
+  if (val === 1) return School;
+  if (val === 2) return Management;
+  if (val === 3) return Grid;
+  return FolderOpened;
+}
+
+const getCategoryIconClass = (val: number) => {
+  if (val === 1) return 'text-red-500 text-lg mr-2';
+  if (val === 2) return 'text-blue-500 text-lg mr-2';
+  if (val === 3) return 'text-green-500 text-lg mr-2';
+  return 'text-gray-400 text-lg mr-2';
+}
+
 onMounted(() => {
   getList();
 });
@@ -343,19 +438,14 @@ onMounted(() => {
 .filter-input {
   width: 240px;
 }
+.ml-4 {
+  margin-left: 16px;
+}
 
 /* 树形表格样式 */
 .dept-name-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.folder-icon {
-  font-size: 16px;
-  color: #909399;
-}
-.folder-icon.has-child {
-  color: #e6a23c; /* 文件夹颜色 */
 }
 .leader-cell {
   display: flex;

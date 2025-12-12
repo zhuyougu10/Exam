@@ -42,8 +42,17 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long publishExam(PublishRequest req, Long userId) {
+        LocalDateTime now = LocalDateTime.now();
+
+        // 1. 时间校验
+        // 结束时间必须晚于开始时间
         if (req.getStartTime().isAfter(req.getEndTime())) {
             throw new BizException(400, "开始时间不能晚于结束时间");
+        }
+        
+        // 开始时间不能早于当前时间 (允许1分钟误差)
+        if (req.getStartTime().isBefore(now.minusMinutes(1))) {
+            throw new BizException(400, "考试开始时间不能早于当前时间");
         }
 
         Publish publish = new Publish();
@@ -56,13 +65,13 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
         publish.setPassword(req.getPassword());
         
         // 状态逻辑：如果开始时间在未来，则是未开始(0)，否则进行中(1)
-        byte status = LocalDateTime.now().isBefore(req.getStartTime()) ? (byte)0 : (byte)1;
+        byte status = now.isBefore(req.getStartTime()) ? (byte)0 : (byte)1;
         publish.setStatus(status);
         
         publish.setCreateBy(userId);
         publish.setUpdateBy(userId);
-        publish.setCreateTime(LocalDateTime.now());
-        publish.setUpdateTime(LocalDateTime.now());
+        publish.setCreateTime(now);
+        publish.setUpdateTime(now);
 
         this.save(publish);
 
