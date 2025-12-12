@@ -1,10 +1,10 @@
 <template>
-  <div class="app-container p-6 bg-gray-50 min-h-screen">
-    <div class="max-w-6xl mx-auto main-wrapper">
+  <div class="page-container">
+    <div class="content-wrapper">
 
       <!-- 顶部步骤条 -->
-      <div class="mb-8 bg-white p-6 rounded-xl shadow-sm step-card">
-        <el-steps :active="activeStep" finish-status="success" align-center>
+      <div class="step-card">
+        <el-steps :active="activeStep" finish-status="success" align-center class="custom-steps">
           <el-step title="基本信息" description="设置试卷元数据" />
           <el-step :title="baseForm.mode === 'random' ? '策略配置' : '题目挑选'" description="配置试卷内容" />
           <el-step title="预览确认" description="最终检查" />
@@ -12,19 +12,22 @@
       </div>
 
       <!-- 步骤 1: 基本信息 -->
-      <div v-show="activeStep === 0" class="step-content-center">
+      <div v-show="activeStep === 0" class="step-center">
         <el-card shadow="hover" class="base-info-card">
           <template #header>
-            <div class="font-bold text-lg text-gray-800">试卷基本信息</div>
+            <div class="card-header-title">
+              <el-icon class="header-icon"><DocumentCopy /></el-icon>
+              试卷基本信息
+            </div>
           </template>
 
-          <el-form ref="baseFormRef" :model="baseForm" :rules="baseRules" label-width="100px" size="large">
+          <el-form ref="baseFormRef" :model="baseForm" :rules="baseRules" label-width="100px" size="large" class="base-form">
             <el-form-item label="试卷标题" prop="title">
               <el-input v-model="baseForm.title" placeholder="例如：2025年春季Java期末考试A卷" />
             </el-form-item>
 
             <el-form-item label="所属课程" prop="courseId">
-              <el-select v-model="baseForm.courseId" placeholder="请选择课程" class="w-full" filterable>
+              <el-select v-model="baseForm.courseId" placeholder="请选择课程" class="full-width" filterable>
                 <el-option
                     v-for="item in courseOptions"
                     :key="item.id"
@@ -34,32 +37,29 @@
               </el-select>
             </el-form-item>
 
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item label="考试时长" prop="duration">
-                  <el-input-number v-model="baseForm.duration" :min="10" :step="10" :max="300" class="w-full">
-                    <template #suffix>分钟</template>
-                  </el-input-number>
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="及格分数" prop="passScore">
-                  <el-input-number v-model="baseForm.passScore" :min="0" :max="1000" class="w-full" placeholder="后续会自动校验">
-                    <template #suffix>分</template>
-                  </el-input-number>
-                </el-form-item>
-              </el-col>
-            </el-row>
+            <div class="form-grid">
+              <el-form-item label="考试时长" prop="duration">
+                <el-input-number v-model="baseForm.duration" :min="10" :step="10" :max="480" class="full-width">
+                  <template #suffix>分钟</template>
+                </el-input-number>
+              </el-form-item>
+
+              <el-form-item label="及格分数" prop="passScore">
+                <el-input-number v-model="baseForm.passScore" :min="0" :max="1000" class="full-width">
+                  <template #suffix>分</template>
+                </el-input-number>
+              </el-form-item>
+            </div>
 
             <el-form-item label="组卷模式" prop="mode">
-              <el-radio-group v-model="baseForm.mode" size="large">
-                <el-radio-button value="random">
-                  <div class="mode-radio-content">
+              <el-radio-group v-model="baseForm.mode" size="large" class="mode-radio-group">
+                <el-radio-button value="random" class="radio-btn">
+                  <div class="radio-content">
                     <el-icon><MagicStick /></el-icon> 智能组卷 (随机抽题)
                   </div>
                 </el-radio-button>
-                <el-radio-button value="manual">
-                  <div class="mode-radio-content">
+                <el-radio-button value="manual" class="radio-btn">
+                  <div class="radio-content">
                     <el-icon><Mouse /></el-icon> 手动组卷 (自由挑选)
                   </div>
                 </el-radio-button>
@@ -71,14 +71,14 @@
 
       <!-- 步骤 2: 策略配置 (智能组卷) -->
       <div v-show="activeStep === 1 && baseForm.mode === 'random'">
-        <el-card shadow="never" class="border-0 rounded-xl">
+        <el-card shadow="never" class="strategy-card">
           <template #header>
-            <div class="flex-between">
-              <span class="font-bold">组卷策略配置</span>
-              <div class="text-sm">
-                当前总分: <span class="text-xl font-bold text-indigo-600">{{ totalScore }}</span> 分
-                <span v-if="baseForm.passScore > totalScore" class="text-red-500 text-xs ml-2">
-                  (警告: 及格分 {{baseForm.passScore}} > 总分)
+            <div class="strategy-header">
+              <span class="strategy-title">组卷策略配置</span>
+              <div class="score-summary">
+                当前总分: <span class="score-number">{{ totalScore }}</span> 分
+                <span v-if="baseForm.passScore > totalScore" class="score-warning">
+                  (及格分 {{baseForm.passScore}} > 总分!)
                 </span>
               </div>
             </div>
@@ -110,19 +110,19 @@
 
             <el-table-column label="题目数量" width="200">
               <template #default="{ row }">
-                <el-input-number v-model="row.count" :min="0" :max="100" />
+                <el-input-number v-model="row.count" :min="0" :max="100" class="full-width" />
               </template>
             </el-table-column>
 
             <el-table-column label="单题分值" width="200">
               <template #default="{ row }">
-                <el-input-number v-model="row.score" :min="0" :max="100" :precision="1" />
+                <el-input-number v-model="row.score" :min="0" :max="100" :precision="1" class="full-width" />
               </template>
             </el-table-column>
 
             <el-table-column label="小计" align="center">
               <template #default="{ row }">
-                <span class="font-bold text-gray-700">{{ (row.count * row.score).toFixed(1) }} 分</span>
+                <span class="subtotal-text">{{ (row.count * row.score).toFixed(1) }} 分</span>
               </template>
             </el-table-column>
 
@@ -133,200 +133,204 @@
             </el-table-column>
           </el-table>
 
-          <div class="mt-4">
-            <el-button type="primary" plain icon="Plus" @click="addRule">添加规则</el-button>
+          <div class="add-rule-btn-container">
+            <el-button type="primary" plain icon="Plus" class="add-rule-btn" @click="addRule">添加规则</el-button>
           </div>
         </el-card>
       </div>
 
       <!-- 步骤 2: 题目挑选 (手动组卷) -->
-      <div v-show="activeStep === 1 && baseForm.mode === 'manual'" class="manual-container">
-        <el-row :gutter="24" class="h-full-row">
+      <div v-show="activeStep === 1 && baseForm.mode === 'manual'" class="manual-layout">
+        <div class="manual-grid">
 
           <!-- 左侧：题库列表 -->
-          <el-col :span="12" class="h-full-col">
-            <el-card shadow="never" class="box-card h-full flex-col-card">
-              <template #header>
-                <div class="font-bold">待选题目库</div>
-              </template>
+          <el-card shadow="never" class="manual-card left-card">
+            <template #header>
+              <div class="manual-card-header">待选题目库</div>
+            </template>
 
-              <div class="filter-bar">
-                <el-input
-                    v-model="questionQuery.content"
-                    placeholder="搜索题目..."
-                    prefix-icon="Search"
-                    clearable
-                    class="flex-1"
-                    @input="handleQuestionSearch"
-                />
-                <el-select v-model="questionQuery.type" placeholder="题型" class="w-32" clearable @change="handleQuestionSearch">
-                  <el-option label="单选" :value="1" />
-                  <el-option label="多选" :value="2" />
-                  <el-option label="判断" :value="3" />
-                  <el-option label="简答" :value="4" />
-                  <el-option label="填空" :value="5" />
-                </el-select>
-              </div>
+            <!-- 筛选栏 -->
+            <div class="manual-filter">
+              <el-input
+                  v-model="questionQuery.content"
+                  placeholder="搜索题目..."
+                  prefix-icon="Search"
+                  clearable
+                  class="flex-1"
+                  @input="handleQuestionSearch"
+              />
+              <el-select v-model="questionQuery.type" placeholder="题型" class="w-32" clearable @change="handleQuestionSearch">
+                <el-option label="单选" :value="1" />
+                <el-option label="多选" :value="2" />
+                <el-option label="判断" :value="3" />
+                <el-option label="简答" :value="4" />
+                <el-option label="填空" :value="5" />
+              </el-select>
+            </div>
 
-              <div class="list-content custom-scrollbar">
-                <div v-for="q in questionList" :key="q.id" class="question-item">
-                  <div class="item-header">
-                    <div class="item-info">
-                      <div class="tags-row">
-                        <el-tag size="small" :type="getTypeTag(q.type)">{{ getTypeLabel(q.type) }}</el-tag>
-                        <el-tag size="small" type="info" effect="plain">难度: {{ q.difficulty }}</el-tag>
-                      </div>
-                      <div class="item-text" :title="q.content">{{ q.content }}</div>
+            <!-- 列表内容 -->
+            <div class="list-container custom-scrollbar">
+              <div v-for="q in questionList" :key="q.id" class="question-list-item group">
+                <div class="question-content">
+                  <div class="question-main">
+                    <div class="question-tags">
+                      <el-tag size="small" :type="getTypeTag(q.type)">{{ getTypeLabel(q.type) }}</el-tag>
+                      <el-tag size="small" type="info" effect="plain">难度: {{ q.difficulty }}</el-tag>
                     </div>
-                    <el-button
-                        type="primary"
-                        size="small"
-                        icon="Plus"
-                        circle
-                        :disabled="isQuestionSelected(q.id)"
-                        @click="addQuestion(q)"
-                    />
+                    <div class="question-text" :title="q.content">{{ q.content }}</div>
                   </div>
+                  <el-button
+                      type="primary"
+                      size="small"
+                      icon="Plus"
+                      circle
+                      class="add-btn"
+                      :disabled="isQuestionSelected(q.id)"
+                      @click="addQuestion(q)"
+                  />
                 </div>
-                <el-empty v-if="questionList.length === 0" description="暂无题目" :image-size="60" />
               </div>
+              <el-empty v-if="questionList.length === 0" description="暂无题目" :image-size="60" />
+            </div>
 
-              <!-- 简单分页 -->
-              <div class="pagination-footer">
-                <el-pagination
-                    small
-                    layout="prev, pager, next"
-                    :total="questionTotal"
-                    v-model:current-page="questionQuery.page"
-                    @current-change="handleQuestionSearch"
-                />
-              </div>
-            </el-card>
-          </el-col>
+            <!-- 底部页码 -->
+            <div class="manual-pagination">
+              <el-pagination
+                  small
+                  layout="prev, pager, next"
+                  :total="questionTotal"
+                  v-model:current-page="questionQuery.page"
+                  @current-change="handleQuestionSearch"
+              />
+            </div>
+          </el-card>
 
           <!-- 右侧：已选列表 -->
-          <el-col :span="12" class="h-full-col">
-            <el-card shadow="never" class="box-card h-full flex-col-card bg-gray">
-              <template #header>
-                <div class="flex-between">
-                  <span class="font-bold text-indigo-700">已选题目 ({{ manualQuestions.length }})</span>
-                  <div class="flex flex-col items-end">
-                    <span class="text-sm font-bold">总分: <span class="text-indigo-600 text-lg">{{ totalScore }}</span></span>
-                    <span v-if="baseForm.passScore > totalScore" class="text-red-500 text-xs">
-                      及格分{{baseForm.passScore}} > 总分!
-                    </span>
-                  </div>
-                </div>
-              </template>
-
-              <div class="list-content custom-scrollbar">
-                <draggable
-                    v-model="manualQuestions"
-                    item-key="id"
-                    ghost-class="ghost"
-                    class="draggable-list"
-                    v-if="manualQuestions.length > 0"
-                >
-                  <template #item="{ element, index }">
-                    <div class="selected-item">
-                      <div class="item-index">{{ index + 1 }}</div>
-                      <div class="item-body">
-                        <div class="tags-row">
-                          <el-tag size="small" :type="getTypeTag(element.type)">{{ getTypeLabel(element.type) }}</el-tag>
-                        </div>
-                        <div class="item-text truncate">{{ element.content }}</div>
-                      </div>
-                      <div class="item-score">
-                        <el-input-number
-                            v-model="element.score"
-                            size="small"
-                            :min="0.5"
-                            :step="0.5"
-                            controls-position="right"
-                            class="w-full"
-                        />
-                      </div>
-                      <el-button type="danger" link icon="Close" @click="removeQuestion(index)" />
-                    </div>
-                  </template>
-                </draggable>
-
-                <div v-else class="empty-placeholder">
-                  <el-icon size="40"><DocumentAdd /></el-icon>
-                  <p>请从左侧添加题目</p>
+          <el-card shadow="never" class="manual-card right-card">
+            <template #header>
+              <div class="manual-card-header-flex">
+                <span class="selected-title">已选题目 ({{ manualQuestions.length }})</span>
+                <div class="selected-summary">
+                  <span class="summary-text">总分: <span class="summary-score">{{ totalScore }}</span></span>
+                  <span v-if="baseForm.passScore > totalScore" class="summary-warning">
+                    及格分{{baseForm.passScore}} > 总分!
+                  </span>
                 </div>
               </div>
-            </el-card>
-          </el-col>
-        </el-row>
+            </template>
+
+            <div class="selected-container custom-scrollbar">
+              <draggable
+                  v-model="manualQuestions"
+                  item-key="id"
+                  ghost-class="ghost"
+                  class="draggable-area"
+                  v-if="manualQuestions.length > 0"
+              >
+                <template #item="{ element, index }">
+                  <div class="selected-item">
+                    <div class="item-index">
+                      {{ index + 1 }}
+                    </div>
+                    <div class="item-content-wrapper">
+                      <div class="item-tags">
+                        <el-tag size="small" :type="getTypeTag(element.type)" effect="light">{{ getTypeLabel(element.type) }}</el-tag>
+                      </div>
+                      <div class="item-text-truncate">{{ element.content }}</div>
+                    </div>
+                    <div class="item-score-input">
+                      <el-input-number
+                          v-model="element.score"
+                          size="small"
+                          :min="0.5"
+                          :step="0.5"
+                          controls-position="right"
+                          class="full-width"
+                      />
+                    </div>
+                    <el-button type="danger" link icon="Close" @click="removeQuestion(index)" />
+                  </div>
+                </template>
+              </draggable>
+
+              <div v-else class="empty-selected">
+                <el-icon size="40" class="empty-icon"><DocumentAdd /></el-icon>
+                <p>请从左侧添加题目</p>
+              </div>
+            </div>
+          </el-card>
+        </div>
       </div>
 
       <!-- 步骤 3: 预览确认 -->
-      <div v-show="activeStep === 2" class="step-content-center">
-        <div class="preview-card">
+      <div v-show="activeStep === 2" class="step-center">
+        <div class="preview-container">
           <!-- 试卷头 -->
-          <div class="paper-header">
-            <h1 class="paper-title">{{ baseForm.title }}</h1>
-            <div class="paper-meta">
+          <div class="preview-header">
+            <h1 class="preview-title">{{ baseForm.title }}</h1>
+            <div class="preview-meta">
               <span>课程: {{ getCourseName(baseForm.courseId) }}</span>
               <span>时长: {{ baseForm.duration }}分钟</span>
-              <span>总分: {{ totalScore }}分</span>
+              <span class="meta-score">总分: {{ totalScore }}分</span>
               <span>及格: {{ baseForm.passScore }}分</span>
             </div>
-            <!-- 再次显示警告 -->
+
             <el-alert
                 v-if="baseForm.passScore > totalScore"
                 title="参数错误：及格分数高于总分，无法提交！"
                 type="error"
                 show-icon
-                class="mt-4"
+                class="mt-4 preview-alert"
                 :closable="false"
             />
           </div>
 
           <!-- 智能组卷预览 -->
-          <div v-if="baseForm.mode === 'random'">
-            <div class="text-center py-10">
-              <el-icon size="60" class="text-indigo-200 mb-4"><MagicStick /></el-icon>
-              <h3 class="text-lg font-bold text-gray-700">智能组卷策略已就绪</h3>
-              <p class="text-gray-500 max-w-md mx-auto mt-2">
+          <div v-if="baseForm.mode === 'random'" class="preview-content">
+            <div class="ai-preview-placeholder">
+              <el-icon size="60" class="ai-icon"><MagicStick /></el-icon>
+              <h3 class="ai-title">智能组卷策略已就绪</h3>
+              <p class="ai-desc">
                 系统将在提交后，根据以下策略从题库中随机抽取试题生成试卷。请确认策略无误。
               </p>
             </div>
 
-            <div class="max-w-lg mx-auto bg-gray-50 p-6 rounded-lg">
-              <h4 class="font-bold mb-4 text-gray-700">题型分布结构</h4>
-              <div v-for="(rule, idx) in randomRules" :key="idx" class="strategy-row">
-                <span class="text-gray-600">{{ getTypeLabel(rule.type) }}</span>
-                <span class="font-medium text-gray-900">
+            <div class="strategy-summary">
+              <h4 class="strategy-summary-title">题型分布结构</h4>
+              <div v-for="(rule, idx) in randomRules" :key="idx" class="strategy-summary-row">
+                <span class="row-type">{{ getTypeLabel(rule.type) }}</span>
+                <span class="row-value">
                   {{ rule.count }}题 × {{ rule.score }}分 = {{ (rule.count * rule.score).toFixed(1) }}分
                 </span>
               </div>
-              <div class="strategy-total">
+              <div class="strategy-summary-total">
                 <span>合计</span>
-                <span class="text-indigo-600">{{ totalScore }} 分</span>
+                <span class="total-value">{{ totalScore }} 分</span>
               </div>
             </div>
           </div>
 
           <!-- 手动组卷预览 -->
-          <div v-else class="preview-list">
-            <div v-for="(group, type) in groupedQuestions" :key="type" class="group-section">
-              <div class="group-title">
-                <div class="bar"></div>
-                {{ getGroupTitle(Number(type)) }}
-                <span class="sub-text">
-                  (共 {{ group.length }} 题，{{ group.reduce((sum: number, q: any) => sum + q.score, 0) }} 分)
-                </span>
+          <div v-else class="preview-content scrollable">
+            <div v-for="(group, type) in groupedQuestions" :key="type" class="question-group">
+              <div class="group-header">
+                <div class="group-bar"></div>
+                <h3 class="group-title">
+                  {{ getGroupTitle(Number(type)) }}
+                  <span class="group-meta">
+                    (共 {{ group.length }} 题，{{ group.reduce((sum: number, q: any) => sum + q.score, 0) }} 分)
+                  </span>
+                </h3>
               </div>
-              <div v-for="(q, idx) in group" :key="q.id" class="question-preview">
-                <div class="flex gap-2">
-                  <span class="font-bold text-gray-700">{{ idx + 1 }}.</span>
-                  <div class="flex-1">
-                    <p class="text-gray-800">{{ q.content }}</p>
-                    <div class="question-meta">
+
+              <div v-for="(q, idx) in group" :key="q.id" class="question-preview-item">
+                <div class="preview-item-flex">
+                  <span class="preview-index">{{ idx + 1 }}.</span>
+                  <div class="preview-body">
+                    <p class="preview-text">{{ q.content }}</p>
+                    <div class="preview-footer">
                       <span>(分值: {{ q.score }}分)</span>
-                      <span class="id-text">ID: {{ q.id }}</span>
+                      <span class="preview-id">ID: {{ q.id }}</span>
                     </div>
                   </div>
                 </div>
@@ -337,10 +341,10 @@
       </div>
 
       <!-- 底部按钮栏 -->
-      <div class="footer-bar">
-        <div class="action-buttons">
-          <el-button v-if="activeStep > 0" @click="prevStep" :icon="ArrowLeft">上一步</el-button>
-          <el-button v-if="activeStep < 2" type="primary" @click="nextStep">
+      <div class="floating-footer">
+        <div class="footer-content">
+          <el-button v-if="activeStep > 0" @click="prevStep" :icon="ArrowLeft" round size="large">上一步</el-button>
+          <el-button v-if="activeStep < 2" type="primary" @click="nextStep" round size="large">
             下一步 <el-icon class="el-icon--right"><ArrowRight /></el-icon>
           </el-button>
           <el-button
@@ -350,6 +354,8 @@
               :disabled="baseForm.passScore > totalScore || totalScore <= 0"
               @click="submitPaper"
               :icon="Check"
+              round
+              size="large"
           >
             确认创建试卷
           </el-button>
@@ -361,28 +367,27 @@
 </template>
 
 <script setup lang="ts">
+// (JS 逻辑部分保持不变，直接复用原有的即可)
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Mouse, Delete, Plus, Search, DocumentAdd, Close, ArrowLeft, ArrowRight, Check, InfoFilled } from '@element-plus/icons-vue'
+import { MagicStick, Mouse, Delete, Plus, Search, DocumentAdd, Close, ArrowLeft, ArrowRight, Check, InfoFilled, DocumentCopy } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import draggable from 'vuedraggable'
 
 const router = useRouter()
 
-// --- 状态定义 ---
 const activeStep = ref(0)
 const submitting = ref(false)
 const courseOptions = ref<any[]>([])
 const baseFormRef = ref()
 
-// 步骤1：基本信息
 const baseForm = reactive({
   title: '',
   courseId: undefined as number | undefined,
   duration: 90,
   passScore: 60,
-  mode: 'random' // 'random' | 'manual'
+  mode: 'random'
 })
 
 const baseRules = {
@@ -398,13 +403,11 @@ const baseRules = {
   ]
 }
 
-// 步骤2：智能组卷规则
 const randomRules = ref([
-  { type: 1, count: 5, score: 2 }, // 默认 单选 5题
-  { type: 2, count: 2, score: 5 }  // 默认 多选 2题
+  { type: 1, count: 5, score: 2 },
+  { type: 2, count: 2, score: 5 }
 ])
 
-// 步骤2：手动组卷数据
 const manualQuestions = ref<any[]>([])
 const questionList = ref<any[]>([])
 const questionTotal = ref(0)
@@ -414,8 +417,6 @@ const questionQuery = reactive({
   content: '',
   type: undefined as number | undefined
 })
-
-// --- 计算属性 ---
 
 const totalScore = computed(() => {
   if (baseForm.mode === 'random') {
@@ -432,17 +433,13 @@ const groupedQuestions = computed(() => {
     if (!groups[q.type]) groups[q.type] = []
     groups[q.type].push(q)
   })
-  return groups // 1:[], 2:[]
+  return groups
 })
 
-// --- 生命周期 ---
 onMounted(() => {
   fetchCourses()
 })
 
-// --- 方法 ---
-
-// 1. 初始化数据
 const fetchCourses = async () => {
   try {
     const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
@@ -455,14 +452,11 @@ const getCourseName = (id?: number) => {
   return c ? c.courseName : '未选课程'
 }
 
-// 2. 步骤控制
 const nextStep = async () => {
-  // 步骤0 -> 步骤1 (基本信息校验)
   if (activeStep.value === 0) {
     if (!baseFormRef.value) return
     await baseFormRef.value.validate((valid: boolean) => {
       if (valid) {
-        // 如果是手动模式且从未加载过题目，预加载一次
         if (baseForm.mode === 'manual' && questionList.value.length === 0) {
           handleQuestionSearch()
         }
@@ -470,15 +464,12 @@ const nextStep = async () => {
       }
     })
   }
-  // 步骤1 -> 步骤2 (题目/规则配置 -> 预览)
   else if (activeStep.value === 1) {
-    // 校验1: 总分必须 > 0
     if (totalScore.value <= 0) {
       ElMessage.warning('试卷总分不能为0，请添加题目或规则')
       return
     }
 
-    // 校验2: 及格分不能大于总分
     if (baseForm.passScore > totalScore.value) {
       ElMessage.error(`参数不合理：及格分 (${baseForm.passScore}) 不能高于总分 (${totalScore.value})`)
       return
@@ -492,7 +483,6 @@ const prevStep = () => {
   activeStep.value--
 }
 
-// 3. 智能组卷逻辑
 const addRule = () => {
   randomRules.value.push({ type: 1, count: 0, score: 0 })
 }
@@ -500,7 +490,6 @@ const removeRule = (index: number) => {
   randomRules.value.splice(index, 1)
 }
 
-// 4. 手动组卷逻辑
 const handleQuestionSearch = async () => {
   if (!baseForm.courseId) return
   try {
@@ -520,7 +509,6 @@ const isQuestionSelected = (id: number) => {
 }
 
 const addQuestion = (question: any) => {
-  // 深拷贝并设置默认分值
   const q = { ...question, score: getDefaultScore(question.type) }
   manualQuestions.value.push(q)
 }
@@ -530,20 +518,17 @@ const removeQuestion = (index: number) => {
 }
 
 const getDefaultScore = (type: number) => {
-  // 根据题型给默认分
   switch (type) {
-    case 1: return 2   // 单选
-    case 2: return 4   // 多选
-    case 3: return 2   // 判断
-    case 4: return 10  // 简答
-    case 5: return 2   // 填空
+    case 1: return 2
+    case 2: return 4
+    case 3: return 2
+    case 4: return 10
+    case 5: return 2
     default: return 2
   }
 }
 
-// 5. 提交创建
 const submitPaper = async () => {
-  // 最终防线
   if (baseForm.passScore > totalScore.value) {
     ElMessage.error('及格分设置过高，请返回第一步修改或增加题目分值')
     return
@@ -553,12 +538,11 @@ const submitPaper = async () => {
   try {
     const url = baseForm.mode === 'random' ? '/paper/random-create' : '/paper/manual-create'
 
-    // 构建Payload
     const payload: any = {
       courseId: baseForm.courseId,
       title: baseForm.title,
       duration: baseForm.duration,
-      passScore: baseForm.passScore // 传递及格分
+      passScore: baseForm.passScore
     }
 
     if (baseForm.mode === 'random') {
@@ -572,18 +556,14 @@ const submitPaper = async () => {
 
     await request.post(url, payload)
     ElMessage.success('试卷创建成功！')
-
-    // 跳转回列表
     router.push('/teacher/paper-list')
   } catch (error: any) {
-    // 拦截器已处理弹窗，此处只负责关闭loading
     console.error('Create paper failed:', error)
   } finally {
     submitting.value = false
   }
 }
 
-// --- Utils ---
 const getTypeLabel = (type: number) => {
   const map: any = { 1: '单选题', 2: '多选题', 3: '判断题', 4: '简答题', 5: '填空题' }
   return map[type] || '未知'
@@ -600,18 +580,43 @@ const getGroupTitle = (type: number) => {
 }
 </script>
 
-<style scoped lang="scss">
-/* 通用样式重置，解决 Tailwind 冲突 */
-.w-full { width: 100%; }
-.mb-6 { margin-bottom: 24px; }
-.mb-8 { margin-bottom: 32px; }
-.mt-4 { margin-top: 16px; }
-.p-6 { padding: 24px; }
-.flex-between { display: flex; justify-content: space-between; align-items: center; }
-.text-center { text-align: center; }
+<style scoped>
+/* Main Layout */
+.page-container {
+  padding: 24px;
+  background-color: #f9fafb;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
 
-/* 步骤容器 */
-.step-content-center {
+.content-wrapper {
+  max-width: 1152px;
+  margin: 0 auto;
+}
+
+/* Steps */
+.step-card {
+  margin-bottom: 32px;
+  background-color: white;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  border: 1px solid #f3f4f6;
+}
+
+:deep(.el-step__title) {
+  font-weight: 500;
+}
+:deep(.el-step__head.is-success) {
+  color: #6366f1;
+  border-color: #6366f1;
+}
+:deep(.el-step__title.is-success) {
+  color: #6366f1;
+}
+
+/* Step 1: Base Info */
+.step-center {
   display: flex;
   justify-content: center;
   width: 100%;
@@ -619,189 +624,387 @@ const getGroupTitle = (type: number) => {
 
 .base-info-card {
   width: 100%;
-  max-width: 700px;
+  max-width: 768px;
   border-radius: 12px;
   border: none;
 }
 
-.mode-radio-content {
+.card-header-title {
+  font-weight: 700;
+  font-size: 18px;
+  color: #1f2937;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px;
 }
 
-/* 手动组卷布局 */
-.manual-container {
-  height: 650px;
+.header-icon {
+  color: #4f46e5;
 }
-.h-full-row {
-  height: 100%;
+
+.base-form {
+  padding: 16px;
 }
-.h-full-col {
-  height: 100%;
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
 }
-.flex-col-card {
-  display: flex;
-  flex-direction: column;
-  border-radius: 12px;
-  border: none;
-  :deep(.el-card__body) {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    padding: 16px;
+
+@media (min-width: 768px) {
+  .form-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
-.bg-gray {
-  background-color: #f9fafb;
+
+.full-width {
+  width: 100%;
 }
 
-/* 筛选栏 */
-.filter-bar {
-  margin-bottom: 16px;
+.mode-radio-group {
+  width: 100%;
   display: flex;
-  gap: 12px;
-  .flex-1 { flex: 1; }
-  .w-32 { width: 128px; }
+  gap: 16px;
 }
 
-/* 列表内容 */
-.list-content {
+.radio-btn {
+  flex: 1;
+}
+
+:deep(.mode-radio-group .el-radio-button__inner) {
+  width: 100%;
+  border-radius: 4px !important;
+  border: 1px solid #dcdfe6;
+}
+
+.radio-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+/* Step 2: Random Strategy */
+.strategy-card {
+  border-radius: 12px;
+  border: none;
+}
+
+.strategy-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.strategy-title {
+  font-weight: 700;
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.score-summary {
+  font-size: 14px;
+  background-color: #f3f4f6;
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.score-number {
+  font-size: 20px;
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+.score-warning {
+  color: #ef4444;
+  font-weight: 700;
+  margin-left: 8px;
+  font-size: 12px;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+.mb-6 { margin-bottom: 24px; }
+
+.subtotal-text {
+  font-weight: 700;
+  color: #374151;
+}
+
+.add-rule-btn-container {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.add-rule-btn {
+  width: 100%;
+  border-style: dashed;
+}
+
+/* Step 2: Manual Layout */
+.manual-layout {
+  height: 650px;
+}
+
+.manual-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  height: 100%;
+}
+
+.manual-card {
+  border-radius: 12px;
+  border: none;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.left-card {
+  background-color: white;
+}
+
+.right-card {
+  background-color: #f9fafb; /* gray-50/50 approx */
+}
+
+:deep(.manual-card .el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.manual-card-header {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.manual-card-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.selected-title {
+  font-weight: 700;
+  color: #4338ca; /* indigo-700 */
+}
+
+.selected-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.summary-text {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.summary-score {
+  color: #4f46e5;
+  font-size: 18px;
+}
+
+.summary-warning {
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 700;
+  animation: pulse 2s infinite;
+}
+
+.manual-filter {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.flex-1 { flex: 1; }
+.w-32 { width: 128px; }
+
+.list-container, .selected-container {
   flex: 1;
   overflow-y: auto;
   padding-right: 8px;
 }
 
-.question-item {
-  padding: 12px;
-  margin-bottom: 8px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  background-color: #fff;
-  transition: all 0.2s;
-
-  &:hover {
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    border-color: #c7d2fe;
-  }
+.draggable-area {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.item-header {
+/* Question Items */
+.question-list-item {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: white;
+  transition: all 0.2s;
+  margin-bottom: 12px;
+}
+
+.question-list-item:hover {
+  border-color: #a5b4fc; /* indigo-300 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.question-content {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
 }
 
-.item-info {
+.question-main {
   flex: 1;
-  overflow: hidden;
+  min-width: 0;
 }
 
-.tags-row {
+.question-tags {
   display: flex;
-  align-items: center;
   gap: 8px;
   margin-bottom: 4px;
 }
 
-.item-text {
+.question-text {
   font-size: 14px;
   color: #374151;
   line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-/* 已选列表项 */
+.add-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.question-list-item:hover .add-btn {
+  opacity: 1;
+}
+
+/* Selected Items */
 .selected-item {
   padding: 12px;
-  background-color: #fff;
+  background-color: white;
   border: 1px solid #e0e7ff;
-  border-radius: 6px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 8px;
   cursor: move;
+  transition: border-color 0.2s;
+}
 
-  &:hover {
-    border-color: #818cf8;
-  }
+.selected-item:hover {
+  border-color: #a5b4fc;
 }
 
 .item-index {
-  color: #9ca3af;
-  font-weight: bold;
   width: 24px;
-  text-align: center;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #f3f4f6;
+  color: #6b7280;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
-.item-body {
+.item-content-wrapper {
   flex: 1;
-  overflow: hidden;
-  .item-text {
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    display: block;
-  }
+  min-width: 0;
 }
 
-.item-score {
-  width: 100px;
+.item-tags {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.item-text-truncate {
+  font-size: 14px;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-score-input {
+  width: 96px;
   flex-shrink: 0;
 }
 
-.empty-placeholder {
+.empty-selected {
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   color: #9ca3af;
-  font-size: 14px;
-  p { margin-top: 8px; }
 }
 
-.pagination-footer {
-  margin-top: 12px;
+.empty-icon {
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.manual-pagination {
+  margin-top: 16px;
   display: flex;
   justify-content: center;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 12px;
 }
 
-/* 预览卡片 */
-.preview-card {
-  width: 100%;
-  max-width: 800px;
-  background-color: #fff;
+/* Preview Step */
+.preview-container {
+  background-color: white;
   padding: 32px;
   border-radius: 12px;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   border: 1px solid #f3f4f6;
+  width: 100%;
+  max-width: 800px;
   min-height: 600px;
+  display: flex;
+  flex-direction: column;
 }
 
-.paper-header {
+.preview-header {
   text-align: center;
   border-bottom: 2px solid #1f2937;
   padding-bottom: 24px;
   margin-bottom: 32px;
 }
 
-.paper-title {
+.preview-title {
   font-size: 24px;
   font-weight: 700;
   color: #111827;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
-.paper-meta {
+.preview-meta {
   display: flex;
   justify-content: center;
   gap: 24px;
@@ -809,95 +1012,216 @@ const getGroupTitle = (type: number) => {
   color: #4b5563;
 }
 
-.strategy-row {
+.meta-score {
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+.preview-alert {
+  margin-top: 16px;
+  max-width: 448px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.preview-content {
+  flex: 1;
+}
+
+.preview-content.scrollable {
+  overflow-y: auto;
+  padding-right: 16px;
+}
+
+.ai-preview-placeholder {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.ai-icon {
+  color: #c7d2fe; /* indigo-200 */
+  margin-bottom: 16px;
+}
+
+.ai-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.ai-desc {
+  color: #6b7280;
+  max-width: 448px;
+  margin: 8px auto 0;
+}
+
+.strategy-summary {
+  max-width: 512px;
+  margin: 0 auto;
+  background-color: #f9fafb;
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.strategy-summary-title {
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: #374151;
+}
+
+.strategy-summary-row {
   display: flex;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 8px 0;
   border-bottom: 1px solid #e5e7eb;
 }
 
-.strategy-total {
-  display: flex;
-  justify-content: space-between;
-  padding: 16px 0;
-  margin-top: 8px;
-  border-top: 2px solid #d1d5db;
-  font-weight: 700;
-  font-size: 18px;
+.strategy-summary-row:last-child {
+  border-bottom: none;
 }
 
-.group-title {
-  font-weight: 700;
+.row-type {
+  color: #4b5563;
+}
+
+.row-value {
+  font-weight: 500;
+  color: #111827;
+}
+
+.strategy-summary-total {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 16px;
+  margin-top: 8px;
+  border-top: 2px solid #d1d5db;
   font-size: 18px;
-  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+.total-value {
+  color: #4f46e5;
+}
+
+/* Grouped Preview */
+.question-group {
+  margin-bottom: 32px;
+}
+
+.group-header {
   display: flex;
   align-items: center;
   gap: 8px;
-
-  .bar { width: 4px; height: 20px; background-color: #1f2937; }
-  .sub-text { font-size: 14px; font-weight: 400; color: #6b7280; }
-}
-
-.question-preview {
   margin-bottom: 16px;
-  padding-left: 16px;
 }
 
-.question-meta {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 4px;
+.group-bar {
+  width: 4px;
+  height: 24px;
+  background-color: #1f2937;
+}
+
+.group-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+}
+
+.group-meta {
+  font-size: 14px;
+  font-weight: 400;
+  color: #6b7280;
+  margin-left: 8px;
+}
+
+.question-preview-item {
+  padding-left: 16px;
+  margin-bottom: 16px;
+}
+
+.preview-item-flex {
+  display: flex;
+  gap: 8px;
+}
+
+.preview-index {
+  font-weight: 700;
+  color: #374151;
+  user-select: none;
+}
+
+.preview-body {
+  flex: 1;
+}
+
+.preview-text {
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.preview-footer {
   display: flex;
   justify-content: space-between;
-
-  .id-text { color: transparent; }
-  &:hover .id-text { color: #d1d5db; }
+  align-items: center;
+  font-size: 12px;
+  color: #9ca3af;
 }
 
-/* 底部按钮栏 */
-.footer-bar {
-  margin-top: 32px;
+.preview-id {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.preview-item-flex:hover .preview-id {
+  opacity: 1;
+}
+
+/* Floating Footer */
+.floating-footer {
+  position: fixed;
+  bottom: 24px;
+  left: 0;
+  right: 0;
   display: flex;
   justify-content: center;
-  position: sticky;
-  bottom: 24px;
-  z-index: 10;
+  z-index: 50;
+  pointer-events: none;
 }
 
-.action-buttons {
+.footer-content {
   background-color: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(12px);
-  padding: 16px 32px;
-  border-radius: 9999px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   border: 1px solid #e5e7eb;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border-radius: 9999px;
+  padding: 16px 32px;
   display: flex;
   gap: 16px;
+  pointer-events: auto;
+  transition: transform 0.3s;
 }
 
-/* 隐藏数字输入框的箭头，使其更简洁 */
-:deep(.el-input-number .el-input__inner) {
-  text-align: left;
+.footer-content:hover {
+  transform: scale(1.05);
 }
 
-/* 题目列表的自定义滚动条 */
-.custom-scrollbar {
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background-color: #d1d5db;
-    border-radius: 3px;
-  }
-  &::-webkit-scrollbar-track {
-    background-color: transparent;
-  }
-}
-
-/* 拖拽时的占位样式 */
+/* Misc */
 .ghost {
   opacity: 0.5;
-  background: #edf2f7;
-  border: 1px dashed #4299e1;
+  background: #eef2ff !important;
+  border: 2px dashed #6366f1 !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #d1d5db;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background-color: transparent;
 }
 </style>

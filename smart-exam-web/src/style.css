@@ -1,8 +1,7 @@
 /* src/style.css */
 
-/* 使用 Tailwind v4 新语法导入基础和工具类样式 */
-@import "tailwindcss/preflight";
-@import "tailwindcss/utilities";
+/* 修复：使用 Tailwind CSS v4 标准导入语法 */
+@import "tailwindcss";
 
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;

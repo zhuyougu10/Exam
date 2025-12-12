@@ -1,62 +1,59 @@
 <template>
-  <div class="app-container p-6 bg-gray-50 min-h-screen">
-    <div class="max-w-7xl mx-auto space-y-6">
+  <div class="page-container">
+    <div class="content-wrapper">
       <!-- 顶部筛选与操作栏 -->
-      <el-card shadow="never" class="border-0 rounded-xl">
-        <div class="flex flex-wrap justify-between items-center gap-4">
-          <div class="flex items-center gap-2">
-            <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600">
-              <el-icon size="20"><Collection /></el-icon>
+      <el-card shadow="never" class="header-card">
+        <div class="header-content">
+          <div class="title-section">
+            <div class="icon-box">
+              <el-icon size="24"><Collection /></el-icon>
             </div>
-            <div>
-              <h2 class="text-lg font-bold text-gray-800">课程知识库</h2>
-              <p class="text-xs text-gray-500">管理课程的 RAG 检索资料 (PDF/Word/MD)</p>
+            <div class="text-box">
+              <h2 class="main-title">课程知识库</h2>
+              <p class="sub-title">管理课程的 RAG 检索资料 (PDF/Word/MD)</p>
             </div>
           </div>
 
-          <el-form :inline="true" class="!m-0 flex flex-wrap items-center gap-2">
-            <el-form-item class="!mr-0 !mb-0">
-              <el-select
-                  v-model="queryParams.courseId"
-                  placeholder="请选择课程"
-                  filterable
-                  class="w-48 md:w-60"
-                  @change="handleCourseChange"
-              >
-                <el-option
-                    v-for="item in courseOptions"
-                    :key="item.id"
-                    :label="item.courseName"
-                    :value="item.id"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item class="!mr-0 !mb-0">
-              <el-input
-                  v-model="queryParams.keyword"
-                  placeholder="搜索文件名"
-                  prefix-icon="Search"
-                  clearable
-                  class="w-40 md:w-52"
-                  @input="handleSearch"
+          <!-- 筛选表单 -->
+          <div class="filter-section">
+            <el-select
+                v-model="queryParams.courseId"
+                placeholder="请选择课程"
+                filterable
+                class="filter-select"
+                @change="handleCourseChange"
+            >
+              <el-option
+                  v-for="item in courseOptions"
+                  :key="item.id"
+                  :label="item.courseName"
+                  :value="item.id"
               />
-            </el-form-item>
-            <el-form-item class="!mr-0 !mb-0">
-              <el-button :icon="Refresh" circle @click="refreshData" />
-            </el-form-item>
-          </el-form>
+            </el-select>
+
+            <el-input
+                v-model="queryParams.keyword"
+                placeholder="搜索文件名"
+                prefix-icon="Search"
+                clearable
+                class="filter-input"
+                @input="handleSearch"
+            />
+
+            <el-button :icon="Refresh" circle @click="refreshData" />
+          </div>
         </div>
       </el-card>
 
-      <!-- 主要内容区域 -->
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <!-- 主要内容区域 (Grid Layout) -->
+      <div class="page-grid">
 
         <!-- 左侧/上方：上传区域 -->
-        <div class="lg:col-span-1">
-          <el-card shadow="never" class="border-0 rounded-xl h-full flex flex-col">
-            <div class="flex-1 flex flex-col justify-center">
+        <div class="grid-upload">
+          <el-card shadow="never" class="upload-card">
+            <div class="upload-wrapper">
               <el-upload
-                  class="upload-area w-full"
+                  class="custom-upload-dragger"
                   drag
                   action="#"
                   multiple
@@ -65,17 +62,20 @@
                   :disabled="!queryParams.courseId || uploadingCount > 0"
                   accept=".pdf,.doc,.docx,.md,.txt"
               >
-                <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-                <div class="el-upload__text">
-                  将文件拖到此处，或 <em>点击上传</em>
-                  <div class="text-xs text-gray-400 mt-1">(支持批量上传)</div>
+                <div class="upload-placeholder">
+                  <el-icon class="upload-icon"><upload-filled /></el-icon>
+                  <div class="upload-text">
+                    将文件拖到此处，或 <em class="highlight">点击上传</em>
+                  </div>
+                  <div class="upload-subtext">(支持批量上传)</div>
                 </div>
+
                 <template #tip>
-                  <div class="el-upload__tip text-center mt-4">
-                    <div v-if="!queryParams.courseId" class="text-orange-500 flex items-center justify-center gap-1">
+                  <div class="upload-tip">
+                    <div v-if="!queryParams.courseId" class="warning-tip">
                       <el-icon><Warning /></el-icon> 请先在上方选择课程
                     </div>
-                    <div v-else class="text-gray-400 px-4">
+                    <div v-else class="info-tip">
                       支持 PDF, Word, Markdown (Max 10MB)
                     </div>
                   </div>
@@ -83,7 +83,7 @@
               </el-upload>
 
               <!-- 上传进度提示 -->
-              <div v-if="uploadingCount > 0" class="mt-4 px-4 text-center">
+              <div v-if="uploadingCount > 0" class="upload-progress">
                 <el-progress
                     :percentage="100"
                     status="warning"
@@ -97,25 +97,26 @@
         </div>
 
         <!-- 右侧/下方：文件列表 -->
-        <div class="lg:col-span-3">
-          <el-card shadow="never" class="border-0 rounded-xl min-h-[500px]">
+        <div class="grid-list">
+          <el-card shadow="never" class="list-card">
             <el-table
                 v-loading="loading && uploadingCount === 0"
                 :data="filteredFileList"
-                style="width: 100%"
+                style="width: 100%; height: 100%;"
                 :header-cell-style="{ background: '#f9fafb', color: '#374151', fontWeight: '600' }"
+                class="file-table"
             >
               <el-table-column label="文件名" min-width="250">
                 <template #default="{ row }">
-                  <div class="flex items-center gap-3 overflow-hidden">
-                    <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 text-2xl flex-shrink-0">
+                  <div class="file-info">
+                    <div class="file-icon-box">
                       <el-icon :class="getFileIconColor(row.fileName)">
                         <component :is="getFileIcon(row.fileName)" />
                       </el-icon>
                     </div>
-                    <div class="flex flex-col overflow-hidden min-w-0">
-                      <span class="font-medium text-gray-700 truncate" :title="row.fileName">{{ row.fileName }}</span>
-                      <span class="text-xs text-gray-400 truncate">ID: {{ row.difyDocumentId || 'Pending...' }}</span>
+                    <div class="file-details">
+                      <span class="file-name" :title="row.fileName">{{ row.fileName }}</span>
+                      <span class="file-id">ID: {{ row.difyDocumentId || 'Pending...' }}</span>
                     </div>
                   </div>
                 </template>
@@ -123,14 +124,14 @@
 
               <el-table-column prop="createTime" label="上传时间" width="180">
                 <template #default="{ row }">
-                  <span class="text-sm text-gray-500">{{ formatTime(row.createTime) }}</span>
+                  <span class="time-text">{{ formatTime(row.createTime) }}</span>
                 </template>
               </el-table-column>
 
               <el-table-column label="状态" width="120" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="getStatusType(row.status)" effect="light" round>
-                    <div class="flex items-center gap-1">
+                  <el-tag :type="getStatusType(row.status)" effect="light" round size="small">
+                    <div class="status-tag-content">
                       <el-icon v-if="row.status === 1" class="is-loading"><Loading /></el-icon>
                       {{ getStatusLabel(row.status) }}
                     </div>
@@ -141,8 +142,8 @@
               <el-table-column label="操作" width="100" align="center" fixed="right">
                 <template #default="{ row }">
                   <el-popconfirm
-                      title="确定要删除该文件吗？这将同步删除 Dify 知识库中的索引。"
-                      width="240"
+                      title="确定要删除该文件吗？"
+                      width="220"
                       confirm-button-text="删除"
                       confirm-button-type="danger"
                       cancel-button-text="取消"
@@ -158,7 +159,9 @@
               </el-table-column>
 
               <template #empty>
-                <el-empty description="该课程暂无知识库文件" />
+                <div class="empty-state">
+                  <el-empty description="该课程暂无知识库文件" />
+                </div>
               </template>
             </el-table>
           </el-card>
@@ -177,9 +180,9 @@ import {
 } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
-// --- 状态定义 ---
+// --- State ---
 const loading = ref(false)
-const uploadingCount = ref(0) // 追踪正在上传的文件数量
+const uploadingCount = ref(0)
 const courseOptions = ref<any[]>([])
 const fileList = ref<any[]>([])
 const pollingTimer = ref<any>(null)
@@ -189,7 +192,6 @@ const queryParams = reactive({
   keyword: ''
 })
 
-// --- 计算属性 ---
 const filteredFileList = computed(() => {
   if (!queryParams.keyword) return fileList.value
   return fileList.value.filter(file =>
@@ -197,10 +199,8 @@ const filteredFileList = computed(() => {
   )
 })
 
-// --- 生命周期 ---
 onMounted(async () => {
   await fetchCourses()
-  // 如果有课程，默认选中第一个并加载
   if (courseOptions.value.length > 0) {
     queryParams.courseId = courseOptions.value[0].id
     fetchFiles()
@@ -211,9 +211,6 @@ onUnmounted(() => {
   stopPolling()
 })
 
-// --- API 方法 ---
-
-// 1. 获取课程列表
 const fetchCourses = async () => {
   try {
     const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
@@ -225,7 +222,6 @@ const fetchCourses = async () => {
   }
 }
 
-// 2. 获取文件列表
 const fetchFiles = async (isPolling = false) => {
   if (!queryParams.courseId) return
 
@@ -236,8 +232,7 @@ const fetchFiles = async (isPolling = false) => {
     })
     fileList.value = res || []
 
-    // 检查是否有"索引中"的文件，如果有则开启轮询
-    const hasIndexing = fileList.value.some(file => file.status === 1) // 1-indexing
+    const hasIndexing = fileList.value.some(file => file.status === 1)
     if (hasIndexing) {
       startPolling()
     } else {
@@ -251,7 +246,6 @@ const fetchFiles = async (isPolling = false) => {
   }
 }
 
-// 3. 上传文件 (支持批量并发)
 const customUpload = async (options: any) => {
   if (!queryParams.courseId) {
     ElMessage.warning('请先选择课程')
@@ -262,23 +256,20 @@ const customUpload = async (options: any) => {
   formData.append('file', options.file)
   formData.append('courseId', queryParams.courseId.toString())
 
-  uploadingCount.value++ // 增加上传计数
+  uploadingCount.value++
   try {
     await request.post('/knowledge/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    // 单个文件成功不立即刷新，而是所有传完后刷新，或者静默刷新
-    // 这里选择简单的策略：每成功一个就静默刷新一次列表
     fetchFiles(true)
     ElMessage.success(`文件 ${options.file.name} 上传成功`)
   } catch (error: any) {
     ElMessage.error(`文件 ${options.file.name} 上传失败: ${error.message || '未知错误'}`)
   } finally {
-    uploadingCount.value-- // 减少上传计数
+    uploadingCount.value--
   }
 }
 
-// 4. 删除文件
 const handleDelete = async (row: any) => {
   try {
     await request.delete(`/knowledge/${row.id}`)
@@ -289,15 +280,11 @@ const handleDelete = async (row: any) => {
   }
 }
 
-// --- 辅助逻辑 ---
-
 const handleCourseChange = () => {
   fetchFiles()
 }
 
-const handleSearch = () => {
-  // 前端过滤，无需请求
-}
+const handleSearch = () => { }
 
 const refreshData = () => {
   fetchFiles()
@@ -306,7 +293,7 @@ const refreshData = () => {
 const startPolling = () => {
   if (pollingTimer.value) return
   pollingTimer.value = setInterval(() => {
-    fetchFiles(true) // 静默刷新
+    fetchFiles(true)
   }, 5000)
 }
 
@@ -316,8 +303,6 @@ const stopPolling = () => {
     pollingTimer.value = null
   }
 }
-
-// --- 样式/格式化 ---
 
 const formatTime = (time: string) => {
   return time ? time.replace('T', ' ').substring(0, 16) : '-'
@@ -334,7 +319,7 @@ const getStatusType = (status: number) => {
 }
 
 const getFileIcon = (fileName: string) => {
-  return 'Document' // 简化处理，统一用文档图标
+  return 'Document'
 }
 
 const getFileIconColor = (fileName: string) => {
@@ -345,46 +330,291 @@ const getFileIconColor = (fileName: string) => {
 }
 </script>
 
-<style scoped lang="scss">
-/* 上传组件样式覆盖 */
-:deep(.el-upload-dragger) {
+<style scoped>
+/* Page Layout */
+.page-container {
+  padding: 24px;
+  background-color: #f9fafb;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.content-wrapper {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Header */
+.header-card {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .header-content {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+.title-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.icon-box {
+  padding: 8px;
+  background-color: #e0e7ff;
+  border-radius: 8px;
+  color: #4f46e5;
+  display: flex;
+}
+
+.main-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.sub-title {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0 0 0;
+}
+
+/* Filter Section */
+.filter-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-select {
   width: 100%;
-  height: 240px;
+}
+
+.filter-input {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .filter-select {
+    width: 240px;
+  }
+  .filter-input {
+    width: 208px;
+  }
+}
+
+/* Grid Layout */
+.page-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 1024px) {
+  .page-grid {
+    grid-template-columns: 1fr 3fr;
+  }
+}
+
+/* Upload Area */
+.upload-card {
+  height: 100%;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.upload-wrapper {
+  height: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+:deep(.custom-upload-dragger .el-upload-dragger) {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-width: 2px;
-  border-style: dashed;
-  border-color: #e5e7eb;
-  transition: all 0.3s;
+  border: 2px dashed #e5e7eb;
   background-color: #f9fafb;
-
-  &:hover {
-    border-color: #6366f1;
-    background-color: #eef2ff;
-
-    .el-icon--upload {
-      color: #6366f1;
-      transform: scale(1.1);
-    }
-  }
-
-  .el-icon--upload {
-    font-size: 64px;
-    color: #9ca3af;
-    margin-bottom: 16px;
-    transition: all 0.3s;
-  }
-
-  .el-upload__text {
-    font-size: 16px;
-    color: #4b5563;
-
-    em {
-      color: #6366f1;
-      font-weight: 600;
-    }
-  }
+  border-radius: 8px;
+  transition: all 0.3s;
 }
+
+:deep(.custom-upload-dragger .el-upload-dragger:hover) {
+  border-color: #6366f1;
+  background-color: #eef2ff;
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.upload-icon {
+  font-size: 60px;
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.upload-text {
+  font-size: 16px;
+  color: #4b5563;
+}
+
+.highlight {
+  color: #6366f1;
+  font-weight: 600;
+  font-style: normal;
+}
+
+.upload-subtext {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 8px;
+}
+
+.upload-tip {
+  margin-top: 16px;
+  text-align: center;
+  min-height: 24px;
+}
+
+.warning-tip {
+  color: #f97316;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.info-tip {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.upload-progress {
+  margin-top: 16px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+/* List Area */
+.list-card {
+  height: 100%;
+  min-height: 500px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.el-card__body) {
+  flex: 1;
+  padding: 0; /* Remove default padding for full-width table */
+  display: flex;
+  flex-direction: column;
+}
+
+.file-table {
+  flex: 1;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.file-icon-box {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background-color: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.file-details {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.file-id {
+  font-size: 12px;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  margin-top: 2px;
+}
+
+.time-text {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.status-tag-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.empty-state {
+  padding: 48px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Text Colors */
+.text-red-500 { color: #ef4444; }
+.text-blue-500 { color: #3b82f6; }
+.text-gray-700 { color: #374151; }
+.text-gray-500 { color: #6b7280; }
 </style>

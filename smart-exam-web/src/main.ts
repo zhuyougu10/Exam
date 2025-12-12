@@ -2,15 +2,14 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import router from './router'
-// 引入自定义样式（放在 Element Plus 样式之后，以便覆盖）
-import './style.css'
+
 import ElementPlus from 'element-plus'
-// 核心修复：引入 Element Plus 的全局样式文件
-// 解决 ElMessage, ElMessageBox 等函数式组件无样式/不显示的问题
+// 1. 先引入 Element Plus 样式
 import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
-
+// 2. 后引入自定义样式（Tailwind），确保 Tailwind 的 Utility 类（如 mt-4）能覆盖组件库样式
+import './style.css'
 
 // 引入路由守卫配置
 import './router/permission'

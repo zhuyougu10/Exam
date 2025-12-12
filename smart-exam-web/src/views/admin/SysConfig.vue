@@ -1,16 +1,16 @@
 <template>
-  <div class="app-container p-6 bg-gray-50 min-h-screen">
-    <div class="max-w-4xl mx-auto">
+  <div class="sys-config-container">
+    <div class="config-wrapper">
       <!-- 标题 -->
-      <div class="mb-6">
-        <h2 class="text-2xl font-bold text-gray-800">系统设置</h2>
-        <p class="text-gray-500 text-sm mt-1">管理系统全局参数及第三方服务配置。</p>
+      <div class="page-header">
+        <h2 class="page-title">系统设置</h2>
+        <p class="page-subtitle">管理系统全局参数及第三方服务配置。</p>
       </div>
 
       <!-- 加载状态 -->
-      <div v-if="loading" class="py-10 text-center">
-        <el-icon class="is-loading text-3xl text-indigo-500"><Loading /></el-icon>
-        <p class="mt-2 text-gray-400">正在加载配置...</p>
+      <div v-if="loading" class="loading-state">
+        <el-icon class="is-loading loading-icon"><Loading /></el-icon>
+        <p class="loading-text">正在加载配置...</p>
       </div>
 
       <!-- 动态配置表单 -->
@@ -19,62 +19,65 @@
           ref="formRef"
           :model="formModel"
           label-position="top"
-          class="space-y-6"
+          class="config-form"
       >
         <!-- 分组：Dify AI 配置 -->
-        <el-card shadow="never" class="border-0 rounded-xl overflow-visible">
+        <el-card shadow="never" class="config-card">
           <template #header>
-            <!-- 修复：添加 style 指定边框颜色，防止显示为黑条 -->
-            <div class="flex items-center gap-2 border-l-4 pl-3" style="border-color: #6366f1">
-              <span class="font-bold text-gray-700">Dify AI 服务配置</span>
-              <el-tag size="small" type="info">核心</el-tag>
+            <div class="card-header-content">
+              <span class="card-title">Dify AI 服务配置</span>
+              <el-tag size="small" type="info" effect="plain" round>核心</el-tag>
             </div>
           </template>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-grid">
             <template v-for="item in difyConfigs" :key="item.id">
-              <el-form-item :label="item.description || item.configKey" class="col-span-1" :class="{ 'md:col-span-2': isLongField(item.configKey) }">
+              <el-form-item
+                  :label="item.description || item.configKey"
+                  class="form-item"
+                  :class="{ 'full-width-item': isLongField(item.configKey) }"
+              >
                 <el-input
                     v-model="item.configValue"
                     :placeholder="'请输入 ' + (item.description || item.configKey)"
                     :type="isPasswordField(item.configKey) ? 'password' : 'text'"
                     :show-password="isPasswordField(item.configKey)"
+                    size="large"
                 >
                   <template #prefix>
-                    <el-icon><component :is="getIcon(item.configKey)" /></el-icon>
+                    <el-icon class="input-icon"><component :is="getIcon(item.configKey)" /></el-icon>
                   </template>
                 </el-input>
                 <!-- 提示信息 -->
-                <div v-if="item.configKey === 'dify_base_url'" class="text-xs text-gray-400 mt-1">
-                  Dify API 的服务地址，例如：https://api.dify.ai/v1
+                <div v-if="item.configKey === 'dify_base_url'" class="helper-text">
+                  <el-icon><InfoFilled /></el-icon> Dify API 的服务地址，例如：https://api.dify.ai/v1
                 </div>
               </el-form-item>
             </template>
           </div>
         </el-card>
 
-        <!-- 分组：其他配置 (如果有) -->
-        <el-card v-if="otherConfigs.length > 0" shadow="never" class="border-0 rounded-xl overflow-visible">
+        <!-- 分组：其他配置 -->
+        <el-card v-if="otherConfigs.length > 0" shadow="never" class="config-card">
           <template #header>
-            <div class="flex items-center gap-2 border-l-4 border-gray-400 pl-3">
-              <span class="font-bold text-gray-700">其他配置</span>
+            <div class="card-header-content other-config">
+              <span class="card-title">其他配置</span>
             </div>
           </template>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-grid">
             <template v-for="item in otherConfigs" :key="item.id">
-              <el-form-item :label="item.description || item.configKey">
-                <el-input v-model="item.configValue" />
+              <el-form-item :label="item.description || item.configKey" class="form-item">
+                <el-input v-model="item.configValue" size="large" />
               </el-form-item>
             </template>
           </div>
         </el-card>
 
-        <!-- 操作按钮 -->
-        <div class="flex justify-end pt-4 sticky bottom-6 z-10">
-          <!-- 修复：添加 style 指定边框颜色，防止显示为黑框 -->
-          <div class="bg-white/90 backdrop-blur px-6 py-3 rounded-full shadow-lg border flex gap-4" style="border-color: #e5e7eb">
-            <el-button @click="fetchConfig" :icon="Refresh">重置更改</el-button>
-            <el-button type="primary" color="#6366f1" @click="handleSubmit" :loading="submitLoading" :icon="Check">
+        <!-- 操作按钮 (悬浮底部) -->
+        <div class="action-bar">
+          <div class="action-buttons">
+            <el-button @click="fetchConfig" :icon="Refresh" size="large">重置更改</el-button>
+            <el-button type="primary" color="#6366f1" @click="handleSubmit" :loading="submitLoading" :icon="Check" size="large">
               保存配置
             </el-button>
           </div>
@@ -87,10 +90,9 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Loading, Link, Key, Collection, Refresh, Check, Setting } from '@element-plus/icons-vue'
+import { Loading, Link, Key, Collection, Refresh, Check, Setting, InfoFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
-// 类型定义
 interface ConfigItem {
   id: number
   configKey: string
@@ -100,28 +102,22 @@ interface ConfigItem {
   updateTime?: string
 }
 
-// 状态
 const loading = ref(true)
 const submitLoading = ref(false)
 const configList = ref<ConfigItem[]>([])
-// 表单模型绑定对象，虽然直接修改 configList 也可以，但为了el-form验证方便，这里用作占位
 const formModel = reactive({})
 
-// 计算属性：将配置分组
 const difyConfigs = computed(() => configList.value.filter(item => item.configKey.startsWith('dify_')))
 const otherConfigs = computed(() => configList.value.filter(item => !item.configKey.startsWith('dify_')))
 
-// 辅助方法：判断是否为密码字段
 const isPasswordField = (key: string) => {
   return key.includes('key') || key.includes('secret') || key.includes('password')
 }
 
-// 辅助方法：判断是否为长字段（占据整行）
 const isLongField = (key: string) => {
   return key === 'dify_base_url'
 }
 
-// 辅助方法：获取图标
 const getIcon = (key: string) => {
   if (key.includes('base_url')) return Link
   if (key.includes('dataset')) return Collection
@@ -129,12 +125,10 @@ const getIcon = (key: string) => {
   return Setting
 }
 
-// 获取配置
 const fetchConfig = async () => {
   loading.value = true
   try {
     const res: any = await request.get('/admin/config')
-    // 后端返回的是 List<Config>
     configList.value = res
   } catch (error) {
     console.error('获取配置失败', error)
@@ -143,19 +137,14 @@ const fetchConfig = async () => {
   }
 }
 
-// 提交保存
 const handleSubmit = async () => {
   submitLoading.value = true
   try {
-    // 直接提交修改后的列表，后端会根据 ID 和 Key 进行更新
-    // 后端已有逻辑：如果值包含 '******' 则跳过更新，保护脱敏数据
     await request.put('/admin/config', configList.value)
-
     ElMessage.success('配置保存成功')
-    // 重新获取以确保显示最新状态
     await fetchConfig()
   } catch (error) {
-    // error handled by interceptor
+    // error handled
   } finally {
     submitLoading.value = false
   }
@@ -167,17 +156,173 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 输入框美化 */
-:deep(.el-input__wrapper) {
-  padding: 8px 12px;
-  box-shadow: 0 0 0 1px #e5e7eb inset;
-  transition: all 0.2s;
+/* 核心布局样式 - 替代 Tailwind Utility */
+.sys-config-container {
+  padding: 24px;
+  background-color: #f9fafb; /* gray-50 */
+  min-height: 100vh;
+  box-sizing: border-box;
 }
+
+.config-wrapper {
+  max-width: 900px; /* max-w-4xl */
+  margin: 0 auto; /* mx-auto */
+}
+
+.page-header {
+  margin-bottom: 32px;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937; /* gray-800 */
+  margin: 0 0 8px 0;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #6b7280; /* gray-500 */
+  margin: 0;
+}
+
+.loading-state {
+  padding: 80px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-icon {
+  font-size: 36px;
+  color: #6366f1; /* indigo-500 */
+  margin-bottom: 16px;
+}
+
+.loading-text {
+  color: #9ca3af; /* gray-400 */
+}
+
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 32px; /* space-y-8 */
+}
+
+.config-card {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb; /* border-0 in Tailwind context usually relies on shadow, but explicit border is safer */
+  overflow: visible;
+}
+
+.card-header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 12px;
+  border-left: 4px solid #6366f1; /* indigo-500 */
+}
+
+.card-header-content.other-config {
+  border-left-color: #9ca3af; /* gray-400 */
+}
+
+.card-title {
+  font-weight: 700;
+  color: #374151; /* gray-700 */
+  font-size: 18px;
+}
+
+/* Grid Layout for Form Items */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 768px) {
+  .form-grid {
+    grid-template-columns: repeat(2, 1fr);
+    column-gap: 32px;
+  }
+}
+
+.form-item {
+  grid-column: span 1;
+}
+
+.full-width-item {
+  grid-column: span 1;
+}
+
+@media (min-width: 768px) {
+  .full-width-item {
+    grid-column: span 2;
+  }
+}
+
+.helper-text {
+  font-size: 12px;
+  color: #9ca3af; /* gray-400 */
+  margin-top: 8px;
+  margin-left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.input-icon {
+  color: #9ca3af;
+}
+
+/* Action Bar */
+.action-bar {
+  position: sticky;
+  bottom: 24px;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  pointer-events: none; /* Let clicks pass through empty space */
+}
+
+.action-buttons {
+  pointer-events: auto;
+  background-color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  padding: 12px 32px;
+  border-radius: 9999px; /* full rounded */
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #f3f4f6;
+  display: flex;
+  gap: 16px;
+  transition: transform 0.3s;
+}
+
+.action-buttons:hover {
+  transform: scale(1.05);
+}
+
+/* Element Plus Overrides */
+:deep(.el-card__header) {
+  padding: 16px 24px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+:deep(.el-card__body) {
+  padding: 24px;
+}
+
+:deep(.el-form-item__label) {
+  font-weight: 500;
+  color: #374151;
+}
+
+:deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #e5e7eb inset;
+}
+
 :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 2px #6366f1 inset !important;
-}
-:deep(.el-card__header) {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f3f4f6;
 }
 </style>

@@ -2,6 +2,6 @@
 export default {
   plugins: {
     '@tailwindcss/postcss': {},
-    // 其他插件...
+    'autoprefixer': {}, // 修复：添加 autoprefixer 插件
   }
 }
