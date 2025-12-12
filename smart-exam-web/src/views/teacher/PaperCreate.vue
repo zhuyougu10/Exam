@@ -146,12 +146,15 @@
       </div>
 
       <!-- 步骤 2: 题目挑选 (手动组卷) -->
-      <!-- 修改点：添加 max-w-[90%] mx-auto 限制宽度居中，gap-6 增加间距，w-full 确保在限制内占满 -->
       <div v-show="activeStep === 1 && baseForm.mode === 'manual'" class="h-full flex gap-6 overflow-hidden max-w-[90%] mx-auto w-full">
         <!-- 左侧：题库列表 (自适应高度) -->
         <div class="flex-1 flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-            <span class="font-bold text-gray-700">待选题目库</span>
+          <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-gray-700 text-lg">待选题目库</span>
+              <el-tag type="info" effect="plain" round size="small">共 {{ questionTotal }} 题</el-tag>
+            </div>
+
             <el-pagination
                 small
                 layout="prev, pager, next"
@@ -162,22 +165,36 @@
             />
           </div>
 
-          <div class="p-3 border-b border-gray-100 flex gap-2">
-            <el-input
-                v-model="questionQuery.content"
-                placeholder="搜索题目..."
-                prefix-icon="Search"
-                clearable
-                class="flex-1"
-                @input="handleQuestionSearch"
-            />
-            <el-select v-model="questionQuery.type" placeholder="题型" class="w-28" clearable @change="handleQuestionSearch">
-              <el-option label="单选" :value="1" />
-              <el-option label="多选" :value="2" />
-              <el-option label="判断" :value="3" />
-              <el-option label="简答" :value="4" />
-              <el-option label="填空" :value="5" />
-            </el-select>
+          <!-- 优化后的搜索栏 -->
+          <div class="p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+            <div class="flex gap-3">
+              <el-select
+                  v-model="questionQuery.type"
+                  placeholder="全部题型"
+                  class="w-32 shrink-0"
+                  clearable
+                  @change="handleQuestionSearch"
+              >
+                <el-option label="单选" :value="1" />
+                <el-option label="多选" :value="2" />
+                <el-option label="判断" :value="3" />
+                <el-option label="简答" :value="4" />
+                <el-option label="填空" :value="5" />
+              </el-select>
+
+              <el-input
+                  v-model="questionQuery.content"
+                  placeholder="请输入题目关键词搜索..."
+                  prefix-icon="Search"
+                  clearable
+                  class="flex-1"
+                  @input="debouncedSearch"
+              >
+                <template #append>
+                  <el-button :icon="Search" @click="handleQuestionSearch" />
+                </template>
+              </el-input>
+            </div>
           </div>
 
           <div class="flex-1 overflow-y-auto p-3 custom-scrollbar">
@@ -202,12 +219,11 @@
                 />
               </div>
             </div>
-            <el-empty v-if="questionList.length === 0" description="暂无题目" :image-size="60" />
+            <el-empty v-if="questionList.length === 0" description="暂无符合条件的题目" :image-size="60" />
           </div>
         </div>
 
         <!-- 右侧：已选列表 (自适应高度) -->
-        <!-- 修改点：使用 flex-1 替换原来的 w-96，实现五五开布局 -->
         <div class="flex-1 flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-indigo-50">
             <span class="font-bold text-indigo-800">已选题目 ({{ manualQuestions.length }})</span>
@@ -259,65 +275,118 @@
       </div>
 
       <!-- 步骤 3: 预览确认 -->
-      <div v-show="activeStep === 2" class="h-full overflow-y-auto custom-scrollbar flex justify-center">
-        <div class="w-full max-w-4xl bg-white p-8 rounded-xl shadow-sm border border-gray-100 min-h-full">
+      <div v-show="activeStep === 2" class="h-full overflow-y-auto custom-scrollbar flex justify-center pb-8">
+        <div class="w-full max-w-4xl bg-white rounded-xl shadow-lg border border-gray-200 min-h-full">
           <!-- 试卷头 -->
-          <div class="text-center border-b-2 border-gray-800 pb-6 mb-8">
-            <h1 class="text-3xl font-bold text-gray-900 mb-4">{{ baseForm.title }}</h1>
-            <div class="flex justify-center gap-8 text-gray-600 text-sm">
-              <span><span class="font-bold">课程:</span> {{ getCourseName(baseForm.courseId) }}</span>
-              <span><span class="font-bold">时长:</span> {{ baseForm.duration }}分钟</span>
-              <span><span class="font-bold">总分:</span> {{ totalScore }}分</span>
-              <span><span class="font-bold">及格:</span> {{ baseForm.passScore }}分</span>
-            </div>
-          </div>
-
-          <!-- 智能组卷预览 -->
-          <div v-if="baseForm.mode === 'random'">
-            <div class="bg-blue-50 p-6 rounded-lg text-center mb-8">
-              <el-icon size="48" class="text-blue-400 mb-2"><MagicStick /></el-icon>
-              <h3 class="font-bold text-blue-800 text-lg">智能组卷策略已就绪</h3>
-              <p class="text-blue-600 text-sm mt-1">系统将在提交后自动从题库中抽取试题</p>
-            </div>
-
-            <div class="max-w-xl mx-auto">
-              <h4 class="font-bold text-gray-700 mb-4 border-l-4 border-blue-500 pl-3">题型分布</h4>
-              <div v-for="(rule, idx) in randomRules" :key="idx" class="flex justify-between py-3 border-b border-gray-100 last:border-0">
-                <span class="text-gray-600">{{ getTypeLabel(rule.type) }}</span>
-                <span class="font-medium">
-                  {{ rule.count }}题 × {{ rule.score }}分 = {{ (rule.count * rule.score).toFixed(1) }}分
-                </span>
+          <div class="text-center border-b-2 border-gray-100 p-8 bg-gray-50 rounded-t-xl">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">{{ baseForm.title }}</h1>
+            <div class="flex justify-center gap-12 text-gray-600 text-sm">
+              <div class="flex flex-col items-center">
+                <span class="text-gray-400 text-xs mb-1">所属课程</span>
+                <span class="font-bold text-gray-800">{{ getCourseName(baseForm.courseId) }}</span>
               </div>
-              <div class="flex justify-between py-4 mt-2 border-t border-gray-200 font-bold text-lg">
-                <span>合计</span>
-                <span class="text-indigo-600">{{ totalScore }} 分</span>
+              <div class="w-px h-10 bg-gray-300"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-gray-400 text-xs mb-1">考试时长</span>
+                <span class="font-bold text-gray-800">{{ baseForm.duration }} 分钟</span>
+              </div>
+              <div class="w-px h-10 bg-gray-300"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-gray-400 text-xs mb-1">试卷总分</span>
+                <span class="font-bold text-indigo-600 text-lg">{{ totalScore }} 分</span>
+              </div>
+              <div class="w-px h-10 bg-gray-300"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-gray-400 text-xs mb-1">及格分数</span>
+                <span class="font-bold text-gray-800">{{ baseForm.passScore }} 分</span>
               </div>
             </div>
           </div>
 
-          <!-- 手动组卷预览 -->
-          <div v-else class="space-y-8">
-            <div v-for="(group, type) in groupedQuestions" :key="type">
-              <div class="flex items-center gap-2 mb-4">
-                <div class="h-6 w-1.5 bg-gray-800 rounded-full"></div>
-                <h3 class="text-lg font-bold text-gray-800">{{ getGroupTitle(Number(type)) }}</h3>
-                <span class="text-sm text-gray-500 font-normal">
-                  (共 {{ group.length }} 题，{{ group.reduce((sum: number, q: any) => sum + q.score, 0) }} 分)
-                </span>
+          <div class="p-8">
+            <!-- 智能组卷预览 -->
+            <div v-if="baseForm.mode === 'random'">
+              <div class="bg-blue-50 p-8 rounded-lg text-center mb-8 border border-blue-100">
+                <div class="inline-block p-4 bg-white rounded-full shadow-sm mb-4">
+                  <el-icon size="40" class="text-blue-500"><MagicStick /></el-icon>
+                </div>
+                <h3 class="font-bold text-blue-800 text-xl mb-2">智能组卷策略已就绪</h3>
+                <p class="text-blue-600">系统将在提交后自动从题库中抽取试题生成试卷</p>
               </div>
 
-              <div class="space-y-4 pl-4">
-                <div v-for="(q, idx) in group" :key="q.id" class="flex gap-3">
-                  <span class="font-bold text-gray-700 shrink-0">{{ idx + 1 }}.</span>
-                  <div class="flex-1">
-                    <p class="text-gray-800 leading-relaxed">{{ q.content }}</p>
-                    <div class="flex justify-between items-center mt-2">
-                      <span class="text-xs text-gray-400 font-mono">({{ q.score }}分)</span>
-                      <span class="text-xs text-gray-300">ID: {{ q.id }}</span>
+              <div class="max-w-2xl mx-auto bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                  <span class="font-bold text-gray-700">题型分布预览</span>
+                  <el-tag type="info">共 {{ randomRules.reduce((sum, r) => sum + r.count, 0) }} 题</el-tag>
+                </div>
+                <div v-for="(rule, idx) in randomRules" :key="idx" class="flex justify-between items-center px-6 py-4 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                  <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm">{{ idx + 1 }}</span>
+                    <span class="text-gray-700 font-medium">{{ getTypeLabel(rule.type) }}</span>
+                  </div>
+                  <div class="flex items-center gap-4">
+                    <span class="text-gray-500">{{ rule.count }} 题 × {{ rule.score }} 分</span>
+                    <span class="font-bold text-gray-800 w-16 text-right">= {{ (rule.count * rule.score).toFixed(1) }} 分</span>
+                  </div>
+                </div>
+                <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
+                  <span class="font-bold text-gray-600">合计</span>
+                  <span class="font-bold text-indigo-600 text-xl">{{ totalScore }} 分</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 手动组卷预览 -->
+            <div v-else class="space-y-6">
+              <template v-for="type in [1, 2, 3, 4, 5]" :key="type">
+                <div v-if="groupedQuestions[type] && groupedQuestions[type].length > 0" class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                  <!-- 题型大标题 -->
+                  <div class="bg-indigo-50/50 px-6 py-4 border-b border-indigo-100 flex justify-between items-center">
+                    <div class="flex items-center gap-3">
+                      <div class="h-6 w-1.5 bg-indigo-600 rounded-full"></div>
+                      <h3 class="text-lg font-bold text-gray-800">{{ getGroupTitle(type) }}</h3>
+                    </div>
+                    <div class="text-sm">
+                      <span class="text-gray-500">共 {{ groupedQuestions[type].length }} 题</span>
+                      <el-divider direction="vertical" />
+                      <span class="text-gray-500">计 <span class="font-bold text-indigo-600">{{ getGroupScore(groupedQuestions[type]) }}</span> 分</span>
+                    </div>
+                  </div>
+
+                  <!-- 题目列表 -->
+                  <div class="divide-y divide-gray-100">
+                    <div v-for="(q, idx) in groupedQuestions[type]" :key="q.id" class="p-6 hover:bg-gray-50 transition-colors group relative">
+                      <div class="flex gap-4">
+                        <!-- 序号 -->
+                        <div class="shrink-0 w-8 text-lg font-bold text-gray-400 font-mono text-right select-none">{{ idx + 1 }}.</div>
+
+                        <!-- 主体 -->
+                        <div class="flex-1 space-y-3">
+                          <!-- 题干与分值 -->
+                          <div class="flex justify-between items-start gap-4">
+                            <div class="text-gray-800 text-base leading-relaxed font-medium text-justify">{{ q.content }}</div>
+                            <div class="shrink-0 flex flex-col items-end gap-1">
+                              <el-tag size="small" type="info" effect="plain" class="font-mono">ID: {{ q.id }}</el-tag>
+                              <span class="text-sm font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{{ q.score }} 分</span>
+                            </div>
+                          </div>
+
+                          <!-- 选项 (仅选择题) -->
+                          <div v-if="[1, 2].includes(q.type) && q.options" class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 mt-2 pl-1">
+                            <div v-for="(opt, oIdx) in parseOptions(q.options)" :key="oIdx"
+                                 class="flex items-start gap-2 text-sm text-gray-600 group-hover:text-gray-800 transition-colors">
+                              <span class="shrink-0 w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center text-xs font-bold text-gray-500 bg-white group-hover:border-indigo-300 group-hover:text-indigo-600 transition-colors mt-0.5">
+                                {{ String.fromCharCode(65 + oIdx) }}
+                              </span>
+                              <span class="leading-relaxed">{{ opt }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </template>
             </div>
           </div>
         </div>
@@ -345,6 +414,7 @@ import { ElMessage } from 'element-plus'
 import { MagicStick, Mouse, Delete, Plus, Search, DocumentAdd, Close, ArrowLeft, ArrowRight, Check, Edit, View } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import draggable from 'vuedraggable'
+import { useDebounceFn } from '@vueuse/core'
 
 const router = useRouter()
 
@@ -421,30 +491,64 @@ const getCourseName = (id?: number) => {
   return c ? c.courseName : '未选课程'
 }
 
+// 核心修复：增强 nextStep 的校验逻辑
 const nextStep = async () => {
+  // 步骤 0 -> 1: 校验基本信息
   if (activeStep.value === 0) {
     if (!baseFormRef.value) return
     await baseFormRef.value.validate((valid: boolean) => {
       if (valid) {
+        // 如果是手动组卷且还没加载题目，先加载一次
         if (baseForm.mode === 'manual' && questionList.value.length === 0) {
           handleQuestionSearch()
         }
         activeStep.value++
       }
     })
-  } else if (activeStep.value === 1) {
+  }
+  // 步骤 1 -> 2: 校验组卷规则与分数逻辑 (核心修改点)
+  else if (activeStep.value === 1) {
+    // 1. 校验总分是否有效
     if (totalScore.value <= 0) {
-      ElMessage.warning('试卷总分不能为0，请添加题目或规则')
+      ElMessage.warning('试卷总分必须大于 0，请添加题目或配置规则')
       return
     }
-    // 增加校验：智能组卷模式下，规则中每项数量和分值都必须大于0
+
+    // 2. 校验及格分与总分的关系
+    // 注意：totalScore 是计算属性，动态计算当前规则/题目的总分
+    if (baseForm.passScore > totalScore.value) {
+      ElMessage.error(`及格分数 (${baseForm.passScore}分) 不能高于试卷总分 (${totalScore.value}分)`)
+      return
+    }
+
+    // 3. 智能组卷特定校验
     if (baseForm.mode === 'random') {
-      const invalidRule = randomRules.value.find(r => r.count <= 0 || r.score <= 0)
+      if (randomRules.value.length === 0) {
+        ElMessage.warning('请至少添加一条组卷规则')
+        return
+      }
+      // 检查是否有无效规则 (数量或分值 <= 0)
+      const invalidRule = randomRules.value.find(r => !r.count || r.count <= 0 || !r.score || r.score <= 0)
       if (invalidRule) {
-        ElMessage.warning('规则中的题目数量和分值必须大于0')
+        ElMessage.warning('所有规则的“题目数量”和“单题分值”都必须大于 0')
         return
       }
     }
+    // 4. 手动组卷特定校验
+    else {
+      if (manualQuestions.value.length === 0) {
+        ElMessage.warning('请从左侧题库中至少选择一道题目')
+        return
+      }
+      // 检查是否有分值为 0 的题目
+      const zeroScoreQ = manualQuestions.value.find(q => !q.score || q.score <= 0)
+      if (zeroScoreQ) {
+        ElMessage.warning('所有选中题目的分值必须大于 0')
+        return
+      }
+    }
+
+    // 所有校验通过，进入预览步骤
     activeStep.value++
   }
 }
@@ -465,6 +569,10 @@ const handleQuestionSearch = async () => {
   } catch (error) { console.error(error) }
 }
 
+const debouncedSearch = useDebounceFn(() => {
+  handleQuestionSearch()
+}, 300)
+
 const isQuestionSelected = (id: number) => manualQuestions.value.some(q => q.id === id)
 
 const addQuestion = (question: any) => {
@@ -482,6 +590,14 @@ const getDefaultScore = (type: number) => {
     case 4: return 10
     case 5: return 2
     default: return 2
+  }
+}
+
+const parseOptions = (jsonStr: string) => {
+  try {
+    return JSON.parse(jsonStr) || []
+  } catch (e) {
+    return []
   }
 }
 
@@ -505,7 +621,8 @@ const submitPaper = async () => {
     const payload: any = {
       courseId: baseForm.courseId,
       title: baseForm.title,
-      duration: baseForm.duration
+      duration: baseForm.duration,
+      passScore: baseForm.passScore
     }
     if (baseForm.mode === 'random') {
       payload.rules = randomRules.value
@@ -535,6 +652,11 @@ const getTypeTag = (type: number) => {
 const getGroupTitle = (type: number) => {
   const labels = ['一', '二', '三', '四', '五']
   return `${labels[type - 1] || '其他'}、${getTypeLabel(type)}`
+}
+
+const getGroupScore = (questions: any[]) => {
+  if (!questions) return 0
+  return questions.reduce((sum, q) => sum + (Number(q.score) || 0), 0)
 }
 </script>
 

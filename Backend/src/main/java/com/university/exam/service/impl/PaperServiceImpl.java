@@ -1,5 +1,6 @@
 package com.university.exam.service.impl;
 
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.university.exam.common.exception.BizException;
 import com.university.exam.entity.Paper;
 import com.university.exam.entity.PaperQuestion;
@@ -8,7 +9,6 @@ import com.university.exam.mapper.PaperMapper;
 import com.university.exam.service.PaperQuestionService;
 import com.university.exam.service.PaperService;
 import com.university.exam.service.QuestionService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,11 +19,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * <p>
- * 试卷模板表 服务实现类
- * </p>
+ * 试卷服务实现类
  *
  * @author MySQL数据库架构师
+ * @version 1.2.0 (增加严格数据校验)
  * @since 2025-12-09
  */
 @Service
@@ -41,19 +40,27 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
         List<PaperQuestion> paperQuestions = new ArrayList<>();
         int sortOrder = 1;
 
+        // 校验规则列表非空 (虽然 DTO 已校验，双重保险)
+        if (req.getRules() == null || req.getRules().isEmpty()) {
+            throw new BizException(400, "组卷规则不能为空");
+        }
+
         // 2. 遍历规则抽题
         for (RuleItem rule : req.getRules()) {
-            if (rule.getCount() <= 0) continue;
-            // 校验单题分数合理性
-            if (rule.getScore().compareTo(BigDecimal.ZERO) <= 0) {
-                throw new BizException(400, "单题分值必须大于0");
+            // 严格校验单条规则
+            if (rule.getCount() == null || rule.getCount() <= 0) {
+                throw new BizException(400, "规则中的题目数量必须大于0");
+            }
+            if (rule.getScore() == null || rule.getScore().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BizException(400, "规则中的题目分值必须大于0");
             }
 
             // 随机抽取
             List<Question> questions = questionService.getRandomQuestions(req.getCourseId(), rule.getType(), rule.getCount());
             
+            // 校验题库充足性
             if (questions.size() < rule.getCount()) {
-                throw new BizException(400, String.format("题库资源不足：类型[%s]需要%d题，仅有%d题", 
+                throw new BizException(400, String.format("题库资源不足：类型[%s]需要%d题，当前题库仅有%d题，请先扩充题库", 
                         getTypeName(rule.getType()), rule.getCount(), questions.size()));
             }
 
@@ -70,7 +77,7 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
             }
         }
 
-        // 3. 业务逻辑核心校验
+        // 3. 核心分数校验
         validatePaperScore(totalScore, req.getPassScore());
 
         // 4. 保存试卷
@@ -79,10 +86,10 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
         paper.setTitle(req.getTitle());
         paper.setDuration(req.getDuration());
         paper.setTotalScore(totalScore);
-        // 如果前端没传及格分，默认总分60%
+        // 如果未传及格分，默认设为总分的 60%
         paper.setPassScore(req.getPassScore() != null ? req.getPassScore() : totalScore.multiply(new BigDecimal("0.6")));
         paper.setStatus((byte) 1);
-        paper.setDifficulty((byte) 2);
+        paper.setDifficulty((byte) 2); // 默认为中等，后续可优化为计算平均难度
         paper.setCreateBy(userId);
         paper.setUpdateBy(userId);
         paper.setCreateTime(LocalDateTime.now());
@@ -99,15 +106,17 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long manualCreate(ManualPaperRequest req, Long userId) {
-        // 1. 初始化
         BigDecimal totalScore = BigDecimal.ZERO;
         List<PaperQuestion> paperQuestions = new ArrayList<>();
         int sortOrder = 1;
 
-        // 2. 遍历题目列表构建关联
+        if (req.getQuestionList() == null || req.getQuestionList().isEmpty()) {
+            throw new BizException(400, "题目列表不能为空");
+        }
+
+        // 2. 遍历题目列表
         for (QuestionItem item : req.getQuestionList()) {
-            // 校验分数
-            if (item.getScore().compareTo(BigDecimal.ZERO) <= 0) {
+            if (item.getScore() == null || item.getScore().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new BizException(400, "题目分值必须大于0");
             }
 
@@ -120,7 +129,7 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
             totalScore = totalScore.add(item.getScore());
         }
 
-        // 3. 业务逻辑核心校验
+        // 3. 核心分数校验
         validatePaperScore(totalScore, req.getPassScore());
 
         // 4. 保存试卷
@@ -154,21 +163,19 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
             throw new BizException(400, "试卷总分必须大于0，请添加题目");
         }
 
-        // 2. 如果指定了及格分，及格分必须 <= 总分
+        // 2. 校验及格分
         if (passScore != null) {
-            if (passScore.compareTo(totalScore) > 0) {
-                throw new BizException(400, String.format("及格分数(%.1f)不能高于试卷总分(%.1f)", 
-                        passScore.doubleValue(), totalScore.doubleValue()));
-            }
             if (passScore.compareTo(BigDecimal.ZERO) < 0) {
                 throw new BizException(400, "及格分数不能为负数");
+            }
+            // 核心校验：及格分不能大于总分
+            if (passScore.compareTo(totalScore) > 0) {
+                throw new BizException(400, String.format("及格分数(%.1f)不能高于试卷总分(%.1f)，请调整规则或降低及格分", 
+                        passScore.doubleValue(), totalScore.doubleValue()));
             }
         }
     }
 
-    /**
-     * 批量保存题目关联
-     */
     private void savePaperQuestions(Long paperId, List<PaperQuestion> list, Long userId) {
         for (PaperQuestion pq : list) {
             pq.setPaperId(paperId);
