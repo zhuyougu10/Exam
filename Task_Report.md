@@ -847,6 +847,39 @@ Backend/src/main/java/com/university/exam/common/dto/student/ProctorLogDto.java
 Backend/src/main/java/com/university/exam/service/impl/ProctorLogServiceImpl.java (更新)
 Backend/src/main/java/com/university/exam/service/ProctorLogService.java (更新)
 
+阶段 5.1：AI阅卷后端服务
 
-更新日期：2025-12-13
-更新人员：前端架构师
+完成状态
+
+✅ 已完成
+
+实现说明
+
+核心服务 (AutoGradingService):
+
+实现了异步阅卷逻辑，通过 @Async 配合线程池执行。
+集成了 DifyClient，针对主观题（简答、填空）调用 Dify Workflow 进行评分。
+实现了自动错题本收录逻辑：当 AI 评分低于 60% 时，自动将题目加入错题本。
+分值校验与更新：自动计算题目得分并更新 exam_record 总分及状态。
+
+控制器 (ReviewController):
+
+实现了 GET /api/review/list 接口，支持按课程、姓名、状态筛选，并实现了教师的数据权限隔离（只能看自己课程的）。
+实现了 GET /api/review/detail/{recordId} 接口，聚合展示试卷详情、学生答案、AI 评分和评语。
+实现了 POST /api/review/submit 接口，允许教师人工介入修改分数，系统自动重新计算总分。
+
+数据传输对象 (DTO):
+
+ReviewListResp: 列表页视图对象。
+ReviewSubmitReq: 人工复核请求对象。
+
+生成的关键文件
+
+Backend/src/main/java/com/university/exam/service/AutoGradingService.java
+Backend/src/main/java/com/university/exam/service/impl/AutoGradingServiceImpl.java
+Backend/src/main/java/com/university/exam/controller/ReviewController.java
+Backend/src/main/java/com/university/exam/common/dto/review/ReviewListResp.java
+Backend/src/main/java/com/university/exam/common/dto/review/ReviewSubmitReq.java
+
+更新日期：2025-12-14
+更新人员：高级后端工程师
