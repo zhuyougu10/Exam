@@ -1,16 +1,36 @@
 /* src/style.css */
-
-/* 修复：使用 Tailwind CSS v4 标准导入语法 */
 @import "tailwindcss";
 
+/* @theme 块是 Tailwind v4 的新特性
+  在这里定义的变量会自动生成对应的 Tailwind 工具类
+  例如：定义 --color-exam-purple 后，你就可以在代码里使用 text-exam-purple, bg-exam-purple 等
+*/
+@theme {
+  /* 定义你的主色调 (提取自你之前的设置 #764ba2) */
+  --color-exam-purple: #764ba2;
+  --color-exam-purple-light: #9b7bc4;
+  --color-exam-bg: #f0f2f5;
+
+  /* 你也可以在这里统一字体配置 */
+  --font-sans: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+/* 常规 CSS 变量设置
+  我们可以引用上面 @theme 定义的值，确保 Element Plus 和 Tailwind 使用同一套颜色
+*/
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
 
-  /* 定义一些全局变量 */
-  --el-color-primary: #409eff;
-  --bg-color: #f0f2f5;
+  /* Element Plus 变量覆盖 - 引用 Tailwind 的主题色 */
+  --el-color-primary: var(--color-exam-purple);
+  --el-color-primary-light-3: var(--color-exam-purple-light);
+  --el-color-primary-light-7: #d2c1e8;
+  --el-menu-bg-color: #001529;
+
+  /* 你的全局背景色变量 */
+  --bg-color: var(--color-exam-bg);
 }
 
 body {
@@ -19,7 +39,7 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background-color: var(--bg-color);
+  background-color: var(--bg-color); /* 或者直接使用 class="bg-exam-bg" */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -33,7 +53,7 @@ body {
   text-align: left;
 }
 
-/* 滚动条美化 */
+/* 滚动条美化保持不变 */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -46,12 +66,4 @@ body {
 
 ::-webkit-scrollbar-track {
   background: transparent;
-}
-
-/* 覆盖 Element Plus 默认主色调（可选） */
-:root {
-  --el-color-primary: #764ba2; /* 与登录页紫色呼应 */
-  --el-color-primary-light-3: #9b7bc4;
-  --el-color-primary-light-7: #d2c1e8;
-  --el-menu-bg-color: #001529;
 }

@@ -1,5 +1,4 @@
 <template>
-  <!-- 外层容器：使用 Flex + 内联样式确保布局稳健，防止样式编译错误导致白屏 -->
   <div
       class="app-container"
       style="display: flex; flex-direction: column; height: calc(100vh - 84px); padding: 24px; background-color: #f9fafb; box-sizing: border-box; overflow: hidden;"
