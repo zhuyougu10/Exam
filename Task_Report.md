@@ -779,5 +779,74 @@ Backend/src/main/java/com/university/exam/common/dto/student/ProctorLogDto.java
 Backend/src/main/java/com/university/exam/service/impl/ProctorLogServiceImpl.java (更新)
 Backend/src/main/java/com/university/exam/service/ProctorLogService.java (更新)
 
+阶段 4.4：学生端仪表盘与列表
+
+完成状态
+
+✅ 已完成
+
+实现说明
+
+学生仪表盘 (Dashboard.vue):
+
+核心指标 Grid: 采用 Grid 布局展示了“考试场次”、“平均分”、“错题数”和“待参加考试”四个关键维度。使用渐变色卡片提升视觉层级。
+
+数据可视化: 实现了一个轻量级的 SVG 折线图组件，无需引入 ECharts 库即可展示近期成绩趋势（模拟数据），保证了页面加载性能。
+
+交互引导: 卡片支持点击跳转，快速引导学生前往“错题本”或“考试列表”。
+
+考试列表 (ExamList.vue):
+
+状态分类: 使用 el-tabs 实现了全部、进行中、未开始、已结束四种状态的快速筛选。
+
+卡片式布局: 替代传统表格，使用信息密度更高的卡片设计。左侧展示状态图标，中间展示时间/时长/限次信息，右侧展示操作按钮。
+
+智能按钮状态:
+
+进行中: 按钮高亮显示“进入考试”，并带有呼吸灯动画提示紧迫感。
+
+未开始: 按钮置灰并显示具体的开始时间。
+
+已结束: 提供查看结果入口（暂时以 Toast 提示，等待后续结果页接口完善）。
+
+逻辑完善: 前端自动根据时间格式化显示日期范围，对于同一天的考试简化显示逻辑。
+
+生成的关键文件
+
+smart-exam-web/src/views/student/Dashboard.vue
+
+smart-exam-web/src/views/student/ExamList.vue
+
+阶段 4.2：监考后端接口
+
+完成状态
+
+✅ 已完成
+
+实现说明
+
+核心控制器 (ProctorController)：
+
+POST /api/proctor/log：接收考生端上报的异常行为日志（如切屏、离开页面、人脸识别异常等）。
+
+业务逻辑 (ProctorLogService)：
+
+安全校验：强制校验上报日志的 record_id 是否属于当前登录用户，防止伪造数据。
+状态过滤：仅在考试状态为“进行中”时接收日志，忽略已交卷后的上报。
+数据落地：将日志信息存入 exam_proctor_log 表，包含操作类型、时间、截图URL等。
+异常判定：实现了基础的切屏计数逻辑，为后续实现“达到阈值自动强制交卷”预留了扩展点。
+
+数据传输对象 (DTO)：
+
+定义了 ProctorLogDto，包含 actionType (switch_screen, leave_page 等) 和 imgSnapshot 字段。
+
+生成的关键文件
+
+Backend/src/main/java/com/university/exam/controller/ProctorController.java
+Backend/src/main/java/com/university/exam/common/dto/student/ProctorLogDto.java
+Backend/src/main/java/com/university/exam/service/impl/ProctorLogServiceImpl.java (更新)
+Backend/src/main/java/com/university/exam/service/ProctorLogService.java (更新)
+
+
 更新日期：2025-12-13
-更新人员：MySQL数据库架构师
+更新人员：前端架构师
