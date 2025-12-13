@@ -209,7 +209,7 @@ interface Question {
   type: 1 | 2 | 3 | 4 | 5;
   content: string;
   score: number;
-  options: string;
+  options: string[] | string; // 兼容后端可能返回的格式
   imageUrl?: string;
   savedAnswer?: string | null;
 }
@@ -231,7 +231,6 @@ const loading = ref(true)
 const currentIndex = ref(0)
 const remainingTime = ref(0)
 const userMarks = ref<Record<number, boolean>>({})
-// 修改点 2: 增加提交中状态
 const isSubmitting = ref(false)
 let timerInterval: any = null
 
@@ -245,6 +244,7 @@ const paperData = ref<PaperData>({
   questions: []
 })
 
+// 用户答案映射 (存储前端显示的 Key: 'A', 'B' 或 文本)
 const userAnswers = ref<Record<number, any>>({})
 
 const { isFullscreen, enterFullscreen } = useProctor({
@@ -269,18 +269,32 @@ const initExam = async () => {
   try {
     const res = await request.post<any>(`/exam/start/${publishId}`)
     paperData.value = res.data || res
-    // 兼容后端可能返回的字段
     remainingTime.value = (res.remainingSeconds !== undefined) ? res.remainingSeconds : (res.duration * 60)
 
     if (paperData.value.questions) {
       paperData.value.questions.forEach((q: Question) => {
-        // 恢复答案
+        // 恢复答案逻辑：将后端存储的 "0", "[0,2]", "1" 转换回前端的 "A", ["A","C"], "A"
         if (q.savedAnswer) {
-          if (q.type === 2) {
-            // 多选转数组
-            userAnswers.value[q.id] = q.savedAnswer.split(',').map(String)
-          } else {
-            userAnswers.value[q.id] = q.savedAnswer
+          try {
+            if (q.type === 1) {
+              // 单选: "0" -> "A"
+              const idx = parseInt(q.savedAnswer)
+              if (!isNaN(idx)) userAnswers.value[q.id] = String.fromCharCode(65 + idx)
+            } else if (q.type === 2) {
+              // 多选: "[0, 2]" -> ["A", "C"]
+              const indices = JSON.parse(q.savedAnswer)
+              if (Array.isArray(indices)) {
+                userAnswers.value[q.id] = indices.map((i: number) => String.fromCharCode(65 + i))
+              }
+            } else if (q.type === 3) {
+              // 判断: "1" -> "A", "0" -> "B"
+              userAnswers.value[q.id] = q.savedAnswer === '1' ? 'A' : 'B'
+            } else {
+              // 简答/填空
+              userAnswers.value[q.id] = q.savedAnswer
+            }
+          } catch (e) {
+            console.error('Answer restore error', e)
           }
         } else if (q.type === 2) {
           userAnswers.value[q.id] = []
@@ -323,7 +337,6 @@ const formattedTime = computed(() => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 })
 
-// 滚动定位
 const scrollToQuestion = (index: number) => {
   currentIndex.value = index
   const element = document.getElementById(`q-${index}`)
@@ -351,7 +364,9 @@ const loadProgressFromLocal = () => {
       const localAnswers = JSON.parse(cached)
       Object.keys(localAnswers).forEach(key => {
         const qId = Number(key)
-        if (!userAnswers.value[qId] || (Array.isArray(userAnswers.value[qId]) && userAnswers.value[qId].length === 0)) {
+        const currentVal = userAnswers.value[qId]
+        const isArrayEmpty = Array.isArray(currentVal) && currentVal.length === 0
+        if (!currentVal || isArrayEmpty) {
           userAnswers.value[qId] = localAnswers[qId]
         }
       })
@@ -365,7 +380,6 @@ const handleAnswerChange = () => {
   saveProgressToLocal()
 }
 
-// 多选处理
 const toggleCheckbox = (qid: number, key: string) => {
   const current = userAnswers.value[qid] || []
   const idx = current.indexOf(key)
@@ -374,7 +388,8 @@ const toggleCheckbox = (qid: number, key: string) => {
   } else {
     current.push(key)
   }
-  userAnswers.value[qid] = [...current] // 触发更新
+  userAnswers.value[qid] = [...current]
+  saveProgressToLocal()
 }
 
 const isChecked = (qid: number, key: string) => {
@@ -419,8 +434,11 @@ const confirmSubmit = () => {
   })
 }
 
+// ------------------------------------------------
+// 核心修复：提交逻辑适配后端 DTO (AnswerItem)
+// ------------------------------------------------
 const submitExam = async (force = false) => {
-  isSubmitting.value = true // 修改点 3: 标记开始提交，抑制全屏检测
+  isSubmitting.value = true
 
   const loadingInstance = ElLoading.service({
     lock: true,
@@ -429,26 +447,50 @@ const submitExam = async (force = false) => {
   })
 
   try {
-    const answersList = Object.entries(userAnswers.value).map(([qId, val]) => {
-      const q = paperData.value.questions.find(i => i.id == Number(qId))
-      if (!q) return null
-      let submitVal = ''
-      if (Array.isArray(val)) {
-        submitVal = JSON.stringify(val.sort())
-      } else {
-        submitVal = String(val)
-      }
-      return { questionId: Number(qId), userAnswer: submitVal }
-    }).filter(Boolean)
+    // 构造 List<AnswerItem>
+    const answersList = paperData.value.questions.map((q) => {
+      const qId = q.id;
+      const val = userAnswers.value[qId];
 
-    await request.post('/exam/submit', {
+      let submitVal = ''
+
+      const letterToIndex = (l: string) => l.charCodeAt(0) - 65
+
+      if (q.type === 1) {
+        // 单选: "A" -> "0"
+        if (val) submitVal = String(letterToIndex(String(val)))
+      } else if (q.type === 2) {
+        // 多选: ["A", "C"] -> JSON String "[0, 2]"
+        if (Array.isArray(val) && val.length > 0) {
+          const indices = val.map(v => letterToIndex(String(v))).sort((a,b) => a-b)
+          submitVal = JSON.stringify(indices)
+        }
+      } else if (q.type === 3) {
+        // 判断: "A" -> "1", "B" -> "0"
+        if (val === 'A') submitVal = '1'
+        else if (val === 'B') submitVal = '0'
+      } else {
+        // 简答/填空
+        submitVal = String(val || '')
+      }
+
+      // DTO: { questionId: Long, userAnswer: String }
+      return {
+        questionId: Number(qId),
+        userAnswer: submitVal
+      }
+    })
+
+    // DTO: SubmitExamRequest { recordId, answers }
+    const requestData = {
       recordId: paperData.value.recordId,
       answers: answersList
-    })
+    }
+
+    await request.post('/exam/submit', requestData)
 
     ElMessage.success('交卷成功！')
 
-    // 修改点 4: 提交成功后，主动退出全屏
     if (document.fullscreenElement) {
       await document.exitFullscreen().catch(() => {})
     }
@@ -458,7 +500,7 @@ const submitExam = async (force = false) => {
   } catch (error: any) {
     console.error(error)
     ElMessage.error(error.message || '交卷失败')
-    isSubmitting.value = false // 失败后恢复全屏检测
+    isSubmitting.value = false
   } finally {
     loadingInstance.close()
   }
@@ -466,30 +508,34 @@ const submitExam = async (force = false) => {
 
 const formatContent = (content: string) => {
   if(!content) return ''
-  return content.replace(/\n/g, '<br/>')
+  return content.replace(/_{3,}/g, '<span style="border-bottom:1px solid #333; padding:0 10px; display:inline-block; min-width:30px;"></span>').replace(/\n/g, '<br/>')
 }
 
-const parseOptions = (jsonStr: string): QuestionOption[] => {
-  try {
-    const arr = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr
-    if (Array.isArray(arr)) {
-      if (typeof arr[0] === 'string') {
-        return arr.map((item: string, idx: number) => ({
-          key: String.fromCharCode(65 + idx),
-          value: item
-        }))
-      }
-      return arr
-    }
-    return []
-  } catch (e) {
-    return []
+// 解析选项
+const parseOptions = (optionsData: any, qType: number): QuestionOption[] => {
+  if (qType === 3) {
+    return [
+      { key: 'A', value: '正确' },
+      { key: 'B', value: '错误' }
+    ]
   }
-}
 
-const getQuestionTypeTag = (type: number) => {
-  // 这里仅保留逻辑，样式在CSS中定义
-  return ''
+  let arr: string[] = []
+  if (Array.isArray(optionsData)) {
+    arr = optionsData
+  } else if (typeof optionsData === 'string') {
+    try {
+      const parsed = JSON.parse(optionsData)
+      if (Array.isArray(parsed)) arr = parsed
+    } catch {
+      return []
+    }
+  }
+
+  return arr.map((item, idx) => ({
+    key: String.fromCharCode(65 + idx),
+    value: item
+  }))
 }
 
 const getQuestionTypeName = (type: number) => {
@@ -504,7 +550,6 @@ const getDifficultyLabel = (diff: number) => {
 
 onMounted(() => {
   initExam()
-  // 防止意外刷新
   window.onbeforeunload = (e) => {
     e = e || window.event;
     if (e) {

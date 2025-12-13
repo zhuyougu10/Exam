@@ -12,11 +12,9 @@ import com.university.exam.entity.Record;
 import com.university.exam.mapper.RecordMapper;
 import com.university.exam.service.*;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.annotation.Resource;
+// ... existing code ...
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,21 +46,17 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
     private final QuestionService questionService;
     private final RecordDetailService recordDetailService;
     private final MistakeBookService mistakeBookService;
-
-    // 解决循环依赖：Self Injection
-    @Lazy
-    @Resource
-    private RecordService self;
+    private final AutoGradingService autoGradingService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ExamPaperVo startExam(Long userId, Long publishId) {
+        // ... existing code ...
         LocalDateTime now = LocalDateTime.now();
 
         // 1. 获取发布信息校验
         Publish publish = publishService.getById(publishId);
-        if (publish == null) throw new BizException(404, "考试不存在");
-        
+        // ... existing code ...
         // 校验时间
         if (now.isBefore(publish.getStartTime())) throw new BizException(400, "考试未开始");
         if (now.isAfter(publish.getEndTime())) throw new BizException(400, "考试已结束");
@@ -116,14 +110,14 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
         List<PaperQuestion> pqs = paperQuestionService.list(new LambdaQueryWrapper<PaperQuestion>()
                 .eq(PaperQuestion::getPaperId, paper.getId())
                 .orderByAsc(PaperQuestion::getSortOrder));
-        
+
         List<Long> qIds = pqs.stream().map(PaperQuestion::getQuestionId).collect(Collectors.toList());
         Map<Long, Question> qMap = questionService.listByIds(qIds).stream()
                 .collect(Collectors.toMap(Question::getId, Function.identity()));
 
         // 如果是断点续考，加载已保存的答案（如果有）
         // 这里简化处理，暂不回显已填答案，后续可优化查询 record_detail 临时表
-        
+
         List<ExamPaperVo.QuestionVo> questionVos = new ArrayList<>();
         for (PaperQuestion pq : pqs) {
             Question q = qMap.get(pq.getQuestionId());
@@ -156,23 +150,70 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
             throw new BizException(400, "考试已结束或已提交，请勿重复提交");
         }
 
-        // 2. 保存答题明细
-        List<RecordDetail> details = new ArrayList<>();
-        // 获取试卷题目分值映射
+        // 2. 准备数据：题目Map 和 分值Map
         List<PaperQuestion> pqs = paperQuestionService.list(new LambdaQueryWrapper<PaperQuestion>()
                 .eq(PaperQuestion::getPaperId, record.getPaperId()));
         Map<Long, BigDecimal> scoreMap = pqs.stream()
                 .collect(Collectors.toMap(PaperQuestion::getQuestionId, PaperQuestion::getScore));
 
+        List<Long> questionIds = req.getAnswers().stream()
+                .map(SubmitExamRequest.AnswerItem::getQuestionId)
+                .collect(Collectors.toList());
+        Map<Long, Question> questionMap = questionService.listByIds(questionIds).stream()
+                .collect(Collectors.toMap(Question::getId, Function.identity()));
+
+        List<RecordDetail> details = new ArrayList<>();
+        List<MistakeBook> mistakeList = new ArrayList<>();
+        BigDecimal currentTotalScore = BigDecimal.ZERO;
+        boolean hasSubjective = false;
+
+        // 3. 遍历答案，保存明细并立即批改客观题
         if (CollUtil.isNotEmpty(req.getAnswers())) {
             for (SubmitExamRequest.AnswerItem item : req.getAnswers()) {
+                Question q = questionMap.get(item.getQuestionId());
+                if (q == null) continue;
+
                 RecordDetail detail = new RecordDetail();
                 detail.setRecordId(record.getId());
                 detail.setQuestionId(item.getQuestionId());
                 detail.setStudentAnswer(item.getUserAnswer());
-                detail.setMaxScore(scoreMap.getOrDefault(item.getQuestionId(), BigDecimal.ZERO));
-                detail.setIsMarked((byte) 0); // 未批改
-                detail.setScore(BigDecimal.ZERO);
+                BigDecimal maxScore = scoreMap.getOrDefault(item.getQuestionId(), BigDecimal.ZERO);
+                detail.setMaxScore(maxScore);
+
+                // --- 核心逻辑：区分题型处理 ---
+                if (q.getType() == 1 || q.getType() == 2 || q.getType() == 3) {
+                    // 客观题：直接比对
+                    // 1-单选, 2-多选, 3-判断
+                    boolean isCorrect = false;
+                    if (StrUtil.equals(item.getUserAnswer(), q.getAnswer())) {
+                        isCorrect = true;
+                        detail.setScore(maxScore);
+                        currentTotalScore = currentTotalScore.add(maxScore);
+                    } else {
+                        detail.setScore(BigDecimal.ZERO);
+                        // 记录错题
+                        MistakeBook mb = new MistakeBook();
+                        mb.setUserId(userId);
+                        mb.setQuestionId(q.getId());
+                        mb.setCourseId(q.getCourseId());
+                        mb.setLastWrongAnswer(item.getUserAnswer());
+                        mb.setWrongCount(1);
+                        mb.setCreateBy(userId);
+                        mb.setUpdateBy(userId);
+                        mb.setCreateTime(LocalDateTime.now());
+                        mb.setUpdateTime(LocalDateTime.now());
+                        mistakeList.add(mb);
+                    }
+                    detail.setIsCorrect((byte) (isCorrect ? 1 : 0));
+                    detail.setIsMarked((byte) 1); // 标记为已批改
+                } else {
+                    // 主观题：暂设计为0分，等待AI或人工
+                    detail.setScore(BigDecimal.ZERO);
+                    detail.setIsMarked((byte) 0);
+                    detail.setIsCorrect((byte) 0);
+                    hasSubjective = true;
+                }
+
                 detail.setCreateBy(userId);
                 detail.setUpdateBy(userId);
                 detail.setCreateTime(LocalDateTime.now());
@@ -182,86 +223,50 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
             recordDetailService.saveBatch(details);
         }
 
-        // 3. 更新记录状态
-        record.setStatus((byte) 2); // 已交卷
+        // 4. 保存客观题错题
+        saveMistakes(mistakeList);
+
+        // 5. 更新记录状态
+        record.setTotalScore(currentTotalScore);
         record.setSubmitTime(LocalDateTime.now());
         record.setUpdateTime(LocalDateTime.now());
-        this.updateById(record);
 
-        // 4. 触发异步阅卷 (通过 Self Injection 调用异步方法)
-        // 注意：RecordServiceImpl 需要被 CGLIB 代理，self 调用才能生效
-        // 也可以使用 ApplicationContext 获取 Bean，或者独立 Service
-        // 这里为了简单，我们假设 self 已经注入
-        // self.asyncGradeExam(record.getId());
-        // 由于 current proxy 问题，这里简单模拟异步，实际建议放到 AsyncService
-        new Thread(() -> gradeExamTask(record.getId())).start(); 
-    }
-
-    // 模拟异步阅卷逻辑 (实际应放入 MessageQueue 或 AsyncService)
-    private void gradeExamTask(Long recordId) {
-        try {
-            log.info("开始异步阅卷: recordId={}", recordId);
-            Record record = this.getById(recordId);
-            List<RecordDetail> details = recordDetailService.list(new LambdaQueryWrapper<RecordDetail>()
-                    .eq(RecordDetail::getRecordId, recordId));
-            
-            BigDecimal totalScore = BigDecimal.ZERO;
-            List<MistakeBook> mistakes = new ArrayList<>();
-
-            for (RecordDetail detail : details) {
-                Question q = questionService.getById(detail.getQuestionId());
-                boolean isCorrect = false;
-                
-                // 简单客观题判分逻辑
-                if (q.getType() == 1 || q.getType() == 2 || q.getType() == 3) {
-                    // 单选、多选、判断：全匹配
-                    if (StrUtil.equals(detail.getStudentAnswer(), q.getAnswer())) {
-                        isCorrect = true;
-                        detail.setScore(detail.getMaxScore());
-                    } else {
-                        detail.setScore(BigDecimal.ZERO);
-                    }
-                    detail.setIsMarked((byte) 1);
-                    detail.setIsCorrect((byte) (isCorrect ? 1 : 0));
-                } else {
-                    // 主观题暂不评分，等待 AI 或人工
-                    // 此处可调用 AI 评分接口
-                }
-                
-                if (detail.getIsMarked() == 1) {
-                    totalScore = totalScore.add(detail.getScore());
-                }
-
-                // 错题本逻辑
-                if (detail.getIsMarked() == 1 && !isCorrect) {
-                    MistakeBook mb = new MistakeBook();
-                    mb.setUserId(record.getUserId());
-                    mb.setQuestionId(q.getId());
-                    mb.setCourseId(q.getCourseId());
-                    mb.setLastWrongAnswer(detail.getStudentAnswer());
-                    mb.setCreateBy(record.getUserId());
-                    mb.setUpdateBy(record.getUserId());
-                    mb.setCreateTime(LocalDateTime.now());
-                    mb.setUpdateTime(LocalDateTime.now());
-                    mistakes.add(mb);
-                }
-            }
-            
-            recordDetailService.updateBatchById(details);
-            
-            // 更新总分
-            record.setTotalScore(totalScore);
-            record.setStatus((byte) 3); // 已批改 (如果有主观题可能还是 2)
+        if (hasSubjective) {
+            record.setStatus((byte) 2); // 2-已交卷 (待AI阅卷)
             this.updateById(record);
 
-            // 保存错题 (需去重处理，这里简化)
-            if (!mistakes.isEmpty()) {
-                mistakeBookService.saveBatch(mistakes);
-            }
+            // 6. 触发异步阅卷 (安全调用)
+            autoGradingService.gradeSubjectiveQuestionsAsync(record.getId());
+        } else {
+            record.setStatus((byte) 3); // 3-已批改 (全客观题，直接完成)
+            this.updateById(record);
+        }
+    }
 
-            log.info("阅卷完成: recordId={}, score={}", recordId, totalScore);
-        } catch (Exception e) {
-            log.error("阅卷失败", e);
+    /**
+     * 批量保存错题（简单排重）
+     */
+    private void saveMistakes(List<MistakeBook> list) {
+        if (CollUtil.isEmpty(list)) return;
+
+        for (MistakeBook mb : list) {
+            // 检查是否已存在
+            long exists = mistakeBookService.count(new LambdaQueryWrapper<MistakeBook>()
+                    .eq(MistakeBook::getUserId, mb.getUserId())
+                    .eq(MistakeBook::getQuestionId, mb.getQuestionId()));
+
+            if (exists > 0) {
+                // 更新错误次数
+                MistakeBook update = new MistakeBook();
+                update.setLastWrongAnswer(mb.getLastWrongAnswer());
+                update.setUpdateTime(LocalDateTime.now());
+                mistakeBookService.update(update, new LambdaQueryWrapper<MistakeBook>()
+                        .eq(MistakeBook::getUserId, mb.getUserId())
+                        .eq(MistakeBook::getQuestionId, mb.getQuestionId()));
+                // 也可以自增 wrong_count，MyBatis-Plus 需要写 SQL 或取出来更新，这里简化
+            } else {
+                mistakeBookService.save(mb);
+            }
         }
     }
 
@@ -279,7 +284,7 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
         List<Record> finishedRecords = this.list(new LambdaQueryWrapper<Record>()
                 .eq(Record::getUserId, userId)
                 .eq(Record::getStatus, 3)); // 只统计已批改
-        
+
         if (!finishedRecords.isEmpty()) {
             double avg = finishedRecords.stream()
                     .mapToDouble(r -> r.getTotalScore().doubleValue())
