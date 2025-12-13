@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6 bg-gray-50 min-h-[calc(100vh-64px)] space-y-6">
+  <div class="p-6 bg-gray-50 min-h-[calc(100vh-64px)] flex flex-col gap-6">
     <!-- 欢迎语 -->
     <div class="flex items-center justify-between">
       <div>
@@ -203,6 +203,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 引入主样式文件作为引用，获取上下文 (v4 最佳实践) */
+@reference "@/style.css";
+
 /* 简单的 SVG 动画 */
 polyline {
   stroke-dasharray: 1000;

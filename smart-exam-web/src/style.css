@@ -1,22 +1,28 @@
-/* src/style.css */
 @import "tailwindcss";
 
-/* @theme 块是 Tailwind v4 的新特性
-  在这里定义的变量会自动生成对应的 Tailwind 工具类
-  例如：定义 --color-exam-purple 后，你就可以在代码里使用 text-exam-purple, bg-exam-purple 等
+/* @theme 块是 Tailwind CSS v4 的核心配置区域。
+  在这里定义的 CSS 变量会自动生成对应的 Tailwind 工具类。
+  例如：定义 --color-exam-purple 后，即可使用 text-exam-purple, bg-exam-purple 等类名。
 */
 @theme {
-  /* 定义你的主色调 (提取自你之前的设置 #764ba2) */
+  /* 定义主色调 (提取自项目设置 #764ba2) */
   --color-exam-purple: #764ba2;
   --color-exam-purple-light: #9b7bc4;
   --color-exam-bg: #f0f2f5;
 
-  /* 你也可以在这里统一字体配置 */
+  /* 统一字体配置 */
   --font-sans: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
+/* 强制安全列表 (Safelist) 配置
+  如果你的代码中有动态拼接的类名（如 :class="`bg-${status}-500`"），
+  Oxide 引擎可能无法检测到。你可以在这里使用 @source inline 强制生成这些类。
+  取消注释下方代码以启用：
+*/
+/* @source inline("bg-green-500", "bg-red-500", "text-blue-600"); */
+
 /* 常规 CSS 变量设置
-  我们可以引用上面 @theme 定义的值，确保 Element Plus 和 Tailwind 使用同一套颜色
+  引用上面 @theme 定义的值，确保 Element Plus 和 Tailwind 使用同一套设计系统
 */
 :root {
   font-family: var(--font-sans);
@@ -29,7 +35,7 @@
   --el-color-primary-light-7: #d2c1e8;
   --el-menu-bg-color: #001529;
 
-  /* 你的全局背景色变量 */
+  /* 全局背景色变量 */
   --bg-color: var(--color-exam-bg);
 }
 
@@ -39,7 +45,7 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background-color: var(--bg-color); /* 或者直接使用 class="bg-exam-bg" */
+  background-color: var(--bg-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -53,7 +59,7 @@ body {
   text-align: left;
 }
 
-/* 滚动条美化保持不变 */
+/* 滚动条美化 */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

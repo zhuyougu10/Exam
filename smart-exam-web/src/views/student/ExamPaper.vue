@@ -114,12 +114,13 @@
             <el-skeleton class="w-full max-w-4xl" :rows="8" animated />
           </div>
 
-          <div v-else class="max-w-4xl mx-auto w-full">
+          <!-- 修复点1：外部列表容器，使用 flex-col + gap-8 (约32px) 代替 Margin -->
+          <div v-else class="max-w-4xl mx-auto w-full flex flex-col gap-8">
             <div
                 v-for="(question, index) in paperData.questions"
                 :key="question.id"
                 :id="'q-' + index"
-                class="mb-8 scroll-mt-24 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-shadow hover:shadow-md"
+                class="scroll-mt-24 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-shadow hover:shadow-md"
                 :class="{ 'ring-2 ring-orange-400 ring-offset-4': currentIndex === index }"
                 @mouseenter="currentIndex = index"
                 @click="currentIndex = index"
@@ -145,12 +146,13 @@
                 </el-tooltip>
               </div>
 
-              <div class="p-6 md:p-8">
-                <!-- 题干 -->
-                <div class="mb-6 text-lg text-gray-800 font-medium leading-relaxed whitespace-pre-wrap select-none">{{ question.content }}</div>
+              <!-- 修复点2：卡片内部布局，使用 flex-col + gap-6 (约24px) 替代 mb-6 / mt-4 -->
+              <div class="p-6 md:p-8 flex flex-col gap-6">
+                <!-- 题干 (移除 mb-6) -->
+                <div class="text-lg text-gray-800 font-medium leading-relaxed whitespace-pre-wrap select-none">{{ question.content }}</div>
 
-                <!-- 图片附件 -->
-                <div v-if="question.imageUrl" class="mb-6">
+                <!-- 图片附件 (移除 mb-6) -->
+                <div v-if="question.imageUrl">
                   <el-image
                       :src="question.imageUrl"
                       :preview-src-list="[question.imageUrl]"
@@ -159,8 +161,8 @@
                   />
                 </div>
 
-                <!-- 答题区域 -->
-                <div class="mt-4">
+                <!-- 答题区域 (移除 mt-4) -->
+                <div>
                   <!-- 1. 单选 / 3. 判断 -->
                   <el-radio-group
                       v-if="[1, 3].includes(question.type)"
@@ -560,6 +562,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 关键修复：引入主样式文件作为引用，获取上下文 */
+@reference "@/style.css";
+
 /* 禁用文本选择，防止复制题目 */
 .select-none {
   user-select: none;
