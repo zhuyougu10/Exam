@@ -720,8 +720,35 @@ Backend/src/main/java/com/university/exam/service/impl/PaperServiceImpl.java
 
 Backend/src/main/java/com/university/exam/service/impl/PublishServiceImpl.java
 
-更新日期：2025-12-11
-更新人员：MySQL数据库架构师
+阶段 4.1：考生后端接口
 
-更新日期：2025-12-10
+完成状态
+
+✅ 已完成
+
+实现说明
+
+核心控制器 (StudentExamController)：
+
+GET /api/exam/my-list：查询学生可用考试列表，实现了基于班级ID (target_dept_ids) 的权限过滤和时间有效性筛选。
+POST /api/exam/start/{publishId}：开始考试接口。实现了断点续考逻辑，创建考试记录，并返回经过脱敏处理（去除答案和解析）的试卷数据。
+POST /api/exam/submit：交卷接口。接收用户答题数据，保存至 exam_record_detail，并触发后台异步阅卷流程。
+
+仪表盘控制器 (StudentDashboardController)：
+
+GET /api/student/dashboard/stats：聚合查询学生的考试记录，计算总考试次数、平均分、及格率及错题数量。
+
+数据传输对象 (DTO)：
+
+定义了 StudentExamDto、ExamPaperVo（脱敏）、SubmitExamRequest 等专用交互对象，规范了前后端数据契约。
+
+生成的关键文件
+
+Backend/src/main/java/com/university/exam/controller/StudentExamController.java
+Backend/src/main/java/com/university/exam/controller/StudentDashboardController.java
+Backend/src/main/java/com/university/exam/common/dto/student/*.java
+Backend/src/main/java/com/university/exam/service/impl/RecordServiceImpl.java (更新)
+Backend/src/main/java/com/university/exam/service/impl/PublishServiceImpl.java (更新)
+
+更新日期：2025-12-13
 更新人员：MySQL数据库架构师

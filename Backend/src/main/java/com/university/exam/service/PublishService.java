@@ -1,6 +1,7 @@
 package com.university.exam.service;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.university.exam.common.dto.student.StudentExamDto;
 import com.university.exam.entity.Publish;
 import com.baomidou.mybatisplus.extension.service.IService;
 import lombok.Data;
@@ -31,6 +32,15 @@ public interface PublishService extends IService<Publish> {
      * 检查试卷是否已发布
      */
     boolean checkIsPublished(Long paperId);
+
+    /**
+     * 获取学生可参加的考试列表
+     *
+     * @param userId 学生ID
+     * @param deptId 学生所属部门ID
+     * @return 考试列表DTO
+     */
+    List<StudentExamDto> listStudentExams(Long userId, Long deptId);
 
     @Data
     class PublishRequest {
