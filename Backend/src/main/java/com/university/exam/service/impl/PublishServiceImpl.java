@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.university.exam.common.dto.student.StudentExamDto;
 import com.university.exam.common.exception.BizException;
 import com.university.exam.entity.*;
+// 显式导入 Record 实体，避免与 java.lang.Record 冲突
+import com.university.exam.entity.Record; 
 import com.university.exam.mapper.PublishMapper;
 import com.university.exam.service.*;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -18,7 +20,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -86,8 +87,6 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
     @Override
     public List<StudentExamDto> listStudentExams(Long userId, Long deptId) {
         // 1. 查询所有已发布(1)或未开始(0)的考试
-        // 这里简化逻辑，查询所有未逻辑删除的记录，然后在内存中过滤
-        // 实际生产中应配合 ElasticSearch 或 MySQL JSON 查询优化
         List<Publish> allPublishes = this.list(new LambdaQueryWrapper<Publish>()
                 .in(Publish::getStatus, 0, 1, 2)
                 .orderByDesc(Publish::getStartTime));
@@ -123,7 +122,6 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
             dto.setDuration(paper != null ? paper.getDuration() : 0);
 
             // 4. 计算状态
-            // 默认状态逻辑
             int status = 0; // 未开始
             if (now.isAfter(publish.getStartTime()) && now.isBefore(publish.getEndTime())) {
                 status = 1; // 进行中
@@ -132,6 +130,7 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
             }
 
             // 查询用户已考次数
+            // 明确使用 com.university.exam.entity.Record
             long triedCount = recordService.count(new LambdaQueryWrapper<Record>()
                     .eq(Record::getUserId, userId)
                     .eq(Record::getPublishId, publish.getId()));

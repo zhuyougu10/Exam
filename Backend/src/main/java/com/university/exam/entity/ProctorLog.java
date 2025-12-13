@@ -38,10 +38,10 @@ public class ProctorLog implements Serializable {
     private Long recordId;
 
     /**
-     * 操作类型（1-切屏, 2-离开页面, 3-环境异常）
+     * 操作类型（switch_screen, leave_page, env_abnormal）
      */
     @TableField("action_type")
-    private Byte actionType;
+    private String actionType; // 修正为 String
 
     /**
      * 日志内容

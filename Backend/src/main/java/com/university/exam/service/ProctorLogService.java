@@ -1,5 +1,6 @@
 package com.university.exam.service;
 
+import com.university.exam.common.dto.student.ProctorLogDto;
 import com.university.exam.entity.ProctorLog;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -13,4 +14,10 @@ import com.baomidou.mybatisplus.extension.service.IService;
  */
 public interface ProctorLogService extends IService<ProctorLog> {
 
+    /**
+     * 处理考生上报的监考日志
+     * @param dto 日志数据
+     * @param userId 当前用户ID
+     */
+    void handleProctorLog(ProctorLogDto dto, Long userId);
 }
