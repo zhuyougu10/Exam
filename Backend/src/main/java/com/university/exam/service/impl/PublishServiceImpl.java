@@ -6,12 +6,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.university.exam.common.dto.student.StudentExamDto;
 import com.university.exam.common.exception.BizException;
 import com.university.exam.entity.*;
-// 显式导入 Record 实体，避免与 java.lang.Record 冲突
-import com.university.exam.entity.Record; 
 import com.university.exam.mapper.PublishMapper;
 import com.university.exam.service.*;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,7 +37,12 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
     private final UserNoticeService userNoticeService;
     private final UserService userService;
     private final PaperService paperService;
-    private final RecordService recordService;
+    
+    // 修复1：使用 @Lazy 解决 PublishService <-> RecordService 的循环依赖
+    // 注意：去掉了 final，使其不参与 @RequiredArgsConstructor 的构造器生成
+    @Autowired
+    @Lazy
+    private RecordService recordService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -86,7 +91,6 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
      */
     @Override
     public List<StudentExamDto> listStudentExams(Long userId, Long deptId) {
-        // 1. 查询所有已发布(1)或未开始(0)的考试
         List<Publish> allPublishes = this.list(new LambdaQueryWrapper<Publish>()
                 .in(Publish::getStatus, 0, 1, 2)
                 .orderByDesc(Publish::getStartTime));
@@ -95,7 +99,6 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
         LocalDateTime now = LocalDateTime.now();
 
         for (Publish publish : allPublishes) {
-            // 2. 权限过滤：检查班级权限
             boolean hasAccess = false;
             try {
                 List<Long> targetIds = JSONUtil.toList(publish.getTargetDeptIds(), Long.class);
@@ -108,7 +111,6 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
 
             if (!hasAccess) continue;
 
-            // 3. 构建 DTO
             StudentExamDto dto = new StudentExamDto();
             dto.setId(publish.getId());
             dto.setTitle(publish.getTitle());
@@ -117,11 +119,10 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
             dto.setLimitCount(publish.getLimitCount());
             dto.setPaperId(publish.getPaperId());
 
-            // 获取试卷时长
             Paper paper = paperService.getById(publish.getPaperId());
             dto.setDuration(paper != null ? paper.getDuration() : 0);
 
-            // 4. 计算状态
+            // 状态计算
             int status = 0; // 未开始
             if (now.isAfter(publish.getStartTime()) && now.isBefore(publish.getEndTime())) {
                 status = 1; // 进行中
@@ -129,25 +130,24 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
                 status = 2; // 已过期
             }
 
-            // 查询用户已考次数
-            // 明确使用 com.university.exam.entity.Record
-            long triedCount = recordService.count(new LambdaQueryWrapper<Record>()
-                    .eq(Record::getUserId, userId)
-                    .eq(Record::getPublishId, publish.getId()));
+            // 修复2：解决 java.lang.Record 和 entity.Record 的引用歧义
+            // 使用全限定名 com.university.exam.entity.Record
+            long triedCount = recordService.count(new LambdaQueryWrapper<com.university.exam.entity.Record>()
+                    .eq(com.university.exam.entity.Record::getUserId, userId)
+                    .eq(com.university.exam.entity.Record::getPublishId, publish.getId()));
             dto.setTriedCount((int) triedCount);
 
-            // 如果次数已用完，视为结束
             if (publish.getLimitCount() > 0 && triedCount >= publish.getLimitCount()) {
                 status = 2; 
             }
             
-            // 检查是否有"进行中"的记录 (断点续考)
-            long ongoingCount = recordService.count(new LambdaQueryWrapper<Record>()
-                    .eq(Record::getUserId, userId)
-                    .eq(Record::getPublishId, publish.getId())
-                    .eq(Record::getStatus, 1));
+            // 使用全限定名
+            long ongoingCount = recordService.count(new LambdaQueryWrapper<com.university.exam.entity.Record>()
+                    .eq(com.university.exam.entity.Record::getUserId, userId)
+                    .eq(com.university.exam.entity.Record::getPublishId, publish.getId())
+                    .eq(com.university.exam.entity.Record::getStatus, 1));
             if (ongoingCount > 0) {
-                status = 1; // 强制设为进行中，允许进入
+                status = 1; 
             }
 
             dto.setStatus(status);

@@ -39,9 +39,10 @@ public class ProctorLog implements Serializable {
 
     /**
      * 操作类型（switch_screen, leave_page, env_abnormal）
+     * 修复：类型从 Byte 改为 String 以匹配业务逻辑
      */
     @TableField("action_type")
-    private String actionType; // 修正为 String
+    private String actionType;
 
     /**
      * 日志内容
