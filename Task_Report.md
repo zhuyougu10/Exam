@@ -1,885 +1,184 @@
-智能考试系统开发进度报告
+智能考试系统设计分析报告
 
-阶段零：数据库架构设计
+一、系统概述
 
-完成状态
+（一）项目背景与目标
 
-✅ 已完成
+在数字化教育飞速发展的当下，传统考试模式的弊端日益凸显，如人工出题耗时费力、考试组织流程繁琐、阅卷效率低下且主观性强等。为了提升考试的效率、公平性与智能化水平，本智能考试系统应运而生。本系统旨在构建一套覆盖用户管理、题库建设、智能组卷、在线考试、AI 阅卷及数据分析的全流程智能考试平台。支持学生、教师、管理员三类角色协同工作，实现考试业务数字化、智能化。在技术栈的选择上，后端采用 Java 17+、Spring Boot 3、MyBatis-Plus、MySQL 8.0、Redis 等，以保障系统的高性能与可扩展性；前端采用 Vue 3、Element Plus、Tailwind CSS 等，为用户提供流畅、美观的交互体验。
 
-设计说明
+（二）核心功能架构
 
-根据业务需求，设计了基于MySQL 8.0的数据库表结构，采用utf8mb4_general_ci字符集，所有表均包含系统字段（id、create_time、update_time、create_by、update_by、is_deleted），使用下划线命名风格，未使用物理外键约束，关联关系由应用层维护。
+用户中心：支持学生、教师、管理员的注册、登录（JWT 认证）、个人信息管理及密码修改。管理员可对用户、部门进行增删改查及状态管理。
 
-生成的表结构
+题库管理：支持单选、多选、判断、简答等多种题型的录入、编辑、删除及批量导入（Excel）。具备题目难度、知识点标签管理功能。支持 AI 辅助出题，通过调用大模型接口自动生成题目。
 
-共设计17张表，包括：
+试卷与考试：支持手动组卷与随机组卷，可设置考试时间、及格分数、防作弊配置（如切屏限制）。学生在规定时间内进行在线答题，系统自动保存答题进度，支持倒计时提醒与强制交卷。
 
-基础用户与组织模块：
+阅卷与成绩：客观题由系统自动批改，主观题支持教师人工批改或 AI 智能批改（基于 Dify 等 AI 平台）。系统自动统计考试成绩，生成成绩单。
 
-sys_user (用户表)
+数据分析：提供多维度的成绩分析报表，包括班级平均分、及格率、分数段分布、最高 / 最低分等。学生可查看个人成长曲线与知识点掌握情况雷达图。
 
-sys_dept (部门/班级表)
+错题本：自动收录学生考试中的错题，学生可对错题进行查看、备注与移除，方便查漏补缺。
 
-sys_course (课程表)
+二、技术架构设计
 
-sys_course_user (选课表)
+（一）后端架构
 
-sys_config (系统配置表)
+基础框架：Spring Boot 3.x 作为核心容器，利用其自动配置特性简化开发。
 
-题库与知识库模块：
+数据持久层：MyBatis-Plus 配合 MySQL 8.0，实现高效的数据 CRUD 操作。使用 Druid 连接池进行数据库连接管理，提升数据库访问性能。
 
-sys_knowledge_file (RAG资料表)
+安全框架：Spring Security + JWT 实现无状态的身份认证与权限控制。定义 JwtAuthenticationFilter 拦截器，解析请求头中的 Token，构建安全上下文。
 
-exam_question (题库表)
+接口文档：集成 SpringDoc OpenAPI（Swagger 3），自动生成 RESTful API 文档，方便前后端联调。
 
-sys_ai_task (AI任务记录表)
+异步处理：使用 Spring 的 @Async 注解处理耗时任务，如 AI 阅卷请求、邮件发送等，避免阻塞主线程。
 
-试卷与组卷模块：
+工具库：集成 Hutool、Lombok、EasyExcel 等工具库，提高代码开发效率与可读性。
 
-exam_paper (试卷模板表)
+（二）前端架构
 
-exam_paper_question (试卷题目关联表)
+核心框架：Vue 3.x（Composition API）+ Vite 构建工具，实现快速开发与热更新。
 
-exam_publish (考试发布/场次表)
+UI 组件库：Element Plus + Tailwind CSS，构建响应式、现代化的用户界面。
 
-考试过程与记录模块：
+状态管理：Pinia 管理全局状态，如用户信息、系统配置等。
 
-exam_record (考试记录表)
+路由管理：Vue Router 实现单页应用路由跳转，配合路由守卫进行权限拦截。
 
-exam_record_detail (答题明细表)
+网络请求：封装 Axios 拦截器，统一处理请求头（Token）、响应错误及 Loading 状态。
 
-exam_proctor_log (监考日志表)
+三、数据库设计
 
-学习反馈与通知模块：
+（一）主要实体关系
 
-exam_mistake_book (错题本)
+用户（User）：关联部门（Dept），拥有角色（Role）。
 
-sys_notice (系统通知表)
+题目（Question）：归属于题库，被试卷（Paper）引用，被答题记录（RecordDetail）关联。
 
-sys_user_notice (用户消息状态表)
+试卷（Paper）：包含多个题目（通过 PaperQuestion 关联），对应多个考试发布（Publish）。
 
-预设数据
+考试记录（Record）：归属于学生（User），对应一张试卷（Paper），包含多个答题详情（RecordDetail）。
 
-系统配置表（sys_config）中包含了Dify相关的预设配置项，敏感数据已使用脱敏占位符处理。
+错题本（MistakeBook）：关联用户（User）与题目（Question）。
 
-文件位置
+（二）关键表结构设计摘要
 
-表结构SQL文件：create_tables.sql
+sys_user：存储用户基本信息，字段包括 username, password, real_name, role, dept_id 等。
 
-本报告文件：Task_Report.md
+exam_question：存储题目信息，字段包括 type, content, options, answer, difficulty, tags 等。
 
-阶段 1.1：后端项目初始化与安全架构
+exam_paper：存储试卷基本信息，字段包括 title, total_score, pass_score, duration 等。
 
-完成状态
+exam_record：存储考试总览，字段包括 user_id, paper_id, total_score, status, create_time 等。
 
-✅ 已完成
+exam_record_detail：存储具体答题情况，字段包括 record_id, question_id, user_answer, score, is_correct 等。
 
-实现说明
+四、核心业务流程
 
-后端项目初始化：
+（一）在线考试流程
 
-创建了符合Maven标准目录结构的Backend文件夹
+发布考试：教师创建试卷，设置考试参数（时间、班级等），发布考试任务。
 
-配置了完整的pom.xml文件，包含所有必要的依赖
+参加考试：学生登录系统，在“我的考试”列表中查看到期未考任务，点击开始考试。
 
-实现了Spring Boot 3.3.4项目的基础架构
+答题过程：前端渲染试卷，通过 LocalStorage 或后端接口定时保存答案（防断电）。系统监控切屏次数与考试剩余时间。
 
-统一响应与异常处理：
+提交试卷：学生主动交卷或时间耗尽强制交卷。后端接收答案，计算客观题分数，生成考试记录。
 
-实现了泛型类Result<T>作为统一响应结果
+主观题批改：若有主观题，状态置为“待批改”。触发异步 AI 批改任务或等待教师人工批改。
 
-创建了全局异常处理器GlobalExceptionHandler
+结果发布：批改完成后，计算总分，更新记录状态为“已完成”。学生可查看成绩与解析。
 
-定义了自定义业务异常BizException
+（二）AI 辅助流程
 
-代码生成：
+AI 出题：教师输入出题要求（如“生成 5 道关于 Spring Boot 的选择题，难度中等”），后端调用大模型 API，解析返回的 JSON 数据，批量存入题库。
 
-使用MyBatis-Plus和Lombok生成了17张表的完整后端代码
+AI 阅卷：针对简答题，将题目标准答案与学生答案发送给 AI，通过 Prompt 提示词要求 AI 给出评分与评语。后端解析 AI 返回结果，写入数据库。
 
-包含Entity、Mapper、Service、ServiceImpl、Controller等层级
+五、接口设计规范
 
-认证模块实现：
+（一）通用响应结构（Result<T>）
 
-实现了JWT Token生成和验证机制
+code (Integer): 状态码，200 表示成功，非 200 表示异常。
 
-创建了登录接口POST /api/auth/login
+message (String): 响应提示信息。
 
-使用BCrypt进行密码校验
+data (T): 业务数据载体。
 
-安全配置与拦截器：
+（二）API 分组
 
-实现了JwtAuthenticationFilter过滤器
+/api/auth/**: 认证相关接口（登录、注册、刷新 Token）。
 
-配置了SecurityFilterChain，定义了URL鉴权规则
+/api/admin/**: 系统管理接口（用户、部门管理）。
 
-实现了操作日志拦截器LogInterceptor
+/api/question/**: 题库管理接口。
 
-配置了CORS跨域支持
+/api/paper/**: 试卷管理接口。
 
-生成的关键配置文件
+/api/exam/**: 学生考试相关接口。
 
-Backend/pom.xml：项目依赖配置
+/api/analysis/**: 统计分析接口。
 
-Backend/src/main/resources/application.yml：应用配置
+六、非功能性需求与部署
 
-Backend/src/main/java/com/university/exam/config/SecurityConfig.java：安全配置
+（一）性能优化
 
-Backend/src/main/java/com/university/exam/config/WebMvcConfig.java：Web MVC配置
+Redis 缓存：缓存热点试卷数据、用户信息、系统配置，减少数据库 IO。
 
-核心Security相关类
+SQL 优化：为查询高频字段（如 user_id, paper_id）建立索引。避免 N+1 查询问题。
 
-JwtUtils.java：JWT Token生成和验证工具类
+静态资源分离：前端打包资源部署至 Nginx 或 CDN，后端仅提供 API 服务。
 
-JwtAuthenticationFilter.java：JWT认证过滤器
+（二）安全性
 
-SecurityConfig.java：安全配置类
+密码加密：使用 BCryptPasswordEncoder 对用户密码进行加密存储。
 
-LogInterceptor.java：操作日志拦截器
+防作弊：前端全屏模式、切屏监听、禁止复制粘贴；后端校验提交时间、IP 限制（可选）。
 
-WebMvcConfig.java：Web MVC配置类
+数据隔离：利用 MyBatis-Plus 拦截器或业务逻辑层确保用户只能访问自己权限内的数据。
 
-阶段 1.2：前端脚手架搭建
+（三）异常处理与日志
 
-完成状态
+全局异常处理：使用 @RestControllerAdvice + @ExceptionHandler 捕获业务异常与系统异常，返回统一格式的错误信息。
 
-✅ 已完成
+AOP 日志：自定义 @Log 注解与切面，记录关键操作（如发布考试、删除数据）的操作人、IP、参数及耗时，便于审计与排查问题。
 
-实现说明
+（四）监控与告警
 
-前端项目初始化：
+使用 Prometheus + Grafana 对服务器资源（CPU、内存、磁盘）及 JVM 状态进行监控。设定阈值，当 CPU 使用率持续超过 80% 或堆内存占用过高时，通过邮件或钉钉机器人发送告警，保障系统高可用。
+当 CPU 使用率持续过高时，说明系统的负载较高，可能会影响系统的性能和稳定性，此时触发告警通知运维团队，运维团队可以及时采取措施，如增加服务器资源、优化代码等，来降低服务器的负载。当 Redis 连接数异常时，可能会导致缓存服务不可用，影响系统的性能，此时也会触发告警通知运维团队，运维团队可以检查 Redis 集群的状态，修复连接问题，确保缓存服务的正常运行。通过邮件或钉钉等方式通知运维团队，确保告警信息能够及时传达给相关人员，以便及时处理问题，保障系统的稳定运行。
 
-使用 Vite 创建了名为 smart-exam-web 的 Vue 3 + TypeScript 项目
+七、质量与安全保障
 
-采用了现代化的前端工程化架构
+（一）测试体系
 
-核心配置文件：
+单元测试：使用 JUnit 5 对后端服务层逻辑进行全面测试，例如针对 JWT 生成 / 解析功能，编写测试用例验证生成的 Token 是否符合规范，解析 Token 时能否准确提取用户信息。对于 BCrypt 密码校验，测试不同密码的加密与校验过程，确保密码安全存储和验证的准确性。在前端，运用 Vue Test Utils 测试前端组件交互，如登录组件的输入框验证、按钮点击逻辑，以及菜单组件的动态显示与切换功能，保证组件在各种情况下的正常运行。
 
-配置了 Vite 开发服务器，包含路径别名和 API 代理
+集成测试：借助 Postman 对接口串联流程进行严格测试，模拟用户登录成功后，依次进行创建课程、上传题库、发布考试等操作，检查各个接口之间的数据传递和业务逻辑是否正确，确保模块间协作正常，系统能够按照预期流程运行。
 
-设置了 TypeScript 路径别名支持
+性能测试：采用 JMeter 模拟 500 + 并发用户进行登录、组卷、交卷等操作，收集系统的响应时间、吞吐量等性能指标数据。针对测试中发现的慢 SQL，如 exam_paper_question 联表查询，通过
 
-集成了 Element Plus 按需加载
+（二）最近更新记录
 
-配置了 TailwindCSS 样式系统
+阶段 6.1：统计分析后端接口
 
-应用初始化：
+已完成 AnalysisController 开发，包含学生知识点雷达图、教师仪表盘统计、考试详细分析接口。
 
-实现了完整的 Vue 3 应用入口文件
+已完成 MistakeBookController 开发，支持错题本的分页查询（含题目详情）与移除功能。
 
-集成了 Pinia 状态管理（带持久化插件）
+接口已移除 Swagger 依赖，符合项目规范。
 
-配置了 Vue Router 路由系统
+阶段 6.2：消息与成绩单前端
 
-全局注册了 Element Plus 图标
+消息中心：实现了 Notification 组件，包含悬浮下拉、未读标记、消息列表。
 
-安装的依赖库
+成绩单页面：实现了 ExamResult.vue，包含顶部渐变 Banner、ECharts 知识点雷达图、以及带红绿高亮的错题解析功能。
 
-生产环境依赖
+阶段 6.3：综合看板与错题本
 
-element-plus：UI 组件库
+教师分析看板 (Analysis.vue)：实现了考试筛选、核心指标卡片、ECharts 柱状图/雷达图及错题 TOP10 表格。
 
-@element-plus/icons-vue：Element Plus 图标
+教师工作台 (Dashboard.vue)：实现了现代化的欢迎 Banner、快捷操作入口及数据概览，布局清晰。
 
-vue-router：路由管理
-
-pinia：状态管理
-
-pinia-plugin-persistedstate：Pinia 持久化插件
-
-axios：HTTP 客户端
-
-sass：CSS 预处理器
-
-@vueuse/core：Vue 组合式 API 工具集
-
-开发环境依赖
-
-unplugin-auto-import：自动导入工具
-
-unplugin-vue-components：组件自动导入
-
-tailwindcss：CSS 框架
-
-postcss：CSS 处理工具
-
-autoprefixer：CSS 浏览器前缀处理
-
-生成的关键配置文件
-
-smart-exam-web/vite.config.ts：Vite 项目配置
-
-smart-exam-web/tsconfig.json：TypeScript 配置
-
-smart-exam-web/src/main.ts：应用入口文件
-
-阶段 1.3：前端核心架构封装
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-网络层封装：
-
-创建了符合项目需求的 Axios 实例
-
-实现了请求拦截器，添加 JWT Token 认证
-
-实现了响应拦截器，统一处理错误和成功响应
-
-配置了 API 代理，处理跨域请求
-
-状态管理：
-
-使用 Pinia 实现了用户状态管理
-
-实现了登录、登出、获取用户信息等核心功能
-
-集成了 Pinia 持久化插件，保存关键状态
-
-实现了角色权限管理
-
-登录页面：
-
-设计了视觉吸引力强的登录页面
-
-实现了表单验证和提交逻辑
-
-处理了登录成功和失败的状态反馈
-
-支持记住我功能
-
-登录页面可正常访问
-
-生成的关键文件
-
-smart-exam-web/src/utils/request.ts：Axios 网络请求封装
-
-smart-exam-web/src/store/user.ts：用户状态管理
-
-smart-exam-web/src/views/login/index.vue：登录页面
-
-阶段 1.4：前端路由与骨架屏
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-路由配置：
-
-定义了常量路由（无需权限验证）
-
-定义了动态路由（需要权限验证）
-
-实现了基于角色的路由过滤
-
-路由守卫：
-
-实现了登录验证逻辑
-
-实现了动态路由加载
-
-实现了权限校验
-
-设置了页面标题
-
-核心布局：
-
-使用 Element Plus Container 组件实现整体布局
-
-实现了左侧菜单栏，根据角色动态渲染
-
-实现了顶部导航栏，包含消息通知和用户信息
-
-支持菜单展开/折叠功能
-
-响应式设计，适配不同屏幕尺寸
-
-生成的页面文件列表
-
-公共页面
-
-smart-exam-web/src/views/login/index.vue - 登录页面
-
-smart-exam-web/src/views/profile/index.vue - 个人中心页面
-
-smart-exam-web/src/views/message/index.vue - 消息通知页面
-
-smart-exam-web/src/views/error/404.vue - 404错误页面
-
-学生端页面
-
-smart-exam-web/src/views/student/Dashboard.vue - 仪表盘
-
-smart-exam-web/src/views/student/ExamList.vue - 我的考试列表
-
-smart-exam-web/src/views/student/ExamPaper.vue - 在线答题页面
-
-smart-exam-web/src/views/student/ExamResult.vue - 成绩解析页面
-
-smart-exam-web/src/views/student/MistakeBook.vue - 智能错题本
-
-教师端页面
-
-smart-exam-web/src/views/teacher/Dashboard.vue - 工作台
-
-smart-exam-web/src/views/teacher/KnowledgeBase.vue - 知识库管理
-
-smart-exam-web/src/views/teacher/QuestionBank.vue - 智能题库
-
-smart-exam-web/src/views/teacher/PaperList.vue - 试卷管理
-
-smart-exam-web/src/views/teacher/PaperCreate.vue - 智能组卷向导
-
-smart-exam-web/src/views/teacher/ExamPublish.vue - 考试发布
-
-smart-exam-web/src/views/teacher/ReviewConsole.vue - AI辅助阅卷台
-
-smart-exam-web/src/views/teacher/Analysis.vue - 成绩统计
-
-管理员页面
-
-smart-exam-web/src/views/admin/UserManage.vue - 用户管理
-
-smart-exam-web/src/views/admin/DeptManage.vue - 组织架构
-
-smart-exam-web/src/views/admin/CourseManage.vue - 课程管理
-
-smart-exam-web/src/views/admin/SysConfig.vue - 系统设置
-
-生成的关键文件
-
-smart-exam-web/src/router/index.ts：路由配置
-
-smart-exam-web/src/router/permission.ts：路由守卫
-
-smart-exam-web/src/layout/index.vue：核心布局组件
-
-阶段 1.5：基础管理模块
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-1. 后端接口实现
-
-SysAdminController
-
-用户管理：
-
-POST /api/admin/user：实现用户创建功能，包含参数验证、权限检查和数据持久化
-
-PUT /api/admin/user/{id}：实现用户信息更新功能，支持部分字段更新
-
-DELETE /api/admin/user/{id}：实现用户删除功能，需处理关联数据
-
-GET /api/admin/user/list：实现用户列表查询功能，支持分页、排序和条件筛选
-
-组织架构：
-
-GET /api/admin/dept/tree：实现部门树形结构查询功能，支持层级展示
-
-POST /api/admin/dept：实现部门创建功能
-
-PUT /api/admin/dept/{id}：实现部门信息更新功能
-
-DELETE /api/admin/dept/{id}：实现部门删除功能，需验证是否存在子部门或关联用户
-
-课程管理：
-
-GET /api/admin/course/list：实现课程列表查询功能，支持分页和筛选
-
-POST /api/admin/course：实现课程创建功能，包含课程基本信息和资源关联
-
-系统设置：
-
-GET /api/admin/config：获取系统配置信息，确保敏感配置项已脱敏处理
-
-PUT /api/admin/config：更新系统配置，包含配置项验证和权限控制
-
-ProfileController
-
-个人中心：
-
-GET /api/profile：获取当前登录用户的详细信息
-
-PUT /api/profile：更新当前用户的基本信息
-
-PUT /api/profile/password：修改当前用户密码，需验证原密码并符合密码复杂度要求
-
-2. 前端页面实现
-
-用户管理页面：完善了用户列表展示、添加、编辑、删除功能
-
-组织架构页面：以树形结构展示部门信息，支持部门的增删改操作
-
-课程管理页面：实现课程列表展示和添加功能
-
-系统设置页面：展示可配置项并支持修改
-
-个人中心页面：包含用户信息展示、基本信息编辑和密码修改功能
-
-3. 通用要求
-
-后端接口实现了统一的响应格式、错误处理和权限验证
-
-前端页面保证了响应式设计，适配不同屏幕尺寸
-
-所有操作都提供了适当的用户反馈和确认机制
-
-涉及敏感操作实现了日志记录功能
-
-生成的关键文件
-
-后端文件
-
-Backend/src/main/java/com/university/exam/controller/SysAdminController.java：系统管理控制器
-
-Backend/src/main/java/com/university/exam/controller/ProfileController.java：个人中心控制器
-
-前端文件
-
-smart-exam-web/src/views/admin/UserManage.vue：用户管理页面
-
-smart-exam-web/src/views/admin/DeptManage.vue：组织架构页面
-
-smart-exam-web/src/views/admin/CourseManage.vue：课程管理页面
-
-smart-exam-web/src/views/admin/SysConfig.vue：系统设置页面
-
-smart-exam-web/src/views/profile/index.vue：个人中心页面
-
-阶段 1.6：Dify 客户端封装
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-客户端封装：
-
-创建了 DifyClient 工具类 (Backend/src/main/java/com/university/exam/common/utils/DifyClient.java)。
-
-采用 Spring 6 RestClient 作为底层 HTTP 客户端，具备轻量、流式 API 特性。
-
-实现了 runWorkflow（执行工作流）、uploadDocument（RAG 知识库上传）、deleteDocument（删除文档）三个核心方法。
-
-动态配置：
-
-Base URL 不再硬编码，而是通过 ConfigService 从数据库 sys_config 表中读取 dify_base_url 键值，实现了环境隔离和动态切换。
-
-所有 API 方法均设计为接收 apiKey 参数，支持不同应用（如出题应用、阅卷应用）使用不同的 Key。
-
-安全脱敏：
-
-实现了内部拦截器 DifyRequestLogger。
-
-在记录请求日志时，自动拦截 Authorization Header，将敏感的 API Key 替换为 Bearer sk-******。
-
-针对 Multipart 文件上传请求，自动隐藏二进制 Body 内容，防止日志刷屏。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/common/utils/DifyClient.java：Dify API 通信核心类
-
-阶段 2.1：知识库后端接口
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-控制器 (KnowledgeBaseController)：
-
-实现了 /api/knowledge/upload、/list、/{id} 三个核心接口。
-
-添加了 @PreAuthorize 权限控制，仅允许教师和管理员访问。
-
-业务逻辑 (KnowledgeFileServiceImpl)：
-
-上传流程：实现了"文件本地存储 -> 调用 DifyClient 上传 -> 数据库记录"的完整链路。
-
-权限隔离：在查询列表和删除文件时，严格校验了教师与课程的绑定关系（通过 sys_course_user 表），确保教师只能操作自己课程的资料。管理员拥有所有权限。
-
-数据一致性：在删除文件时，同步删除了 Dify 上的文档、数据库记录以及本地文件。
-
-集成情况：
-
-成功集成了 DifyClient，动态读取 sys_config 中的 Key 进行操作。
-
-文件临时存储路径设置为项目根目录下的 uploads/ 目录。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/controller/KnowledgeBaseController.java
-
-Backend/src/main/java/com/university/exam/service/impl/KnowledgeFileServiceImpl.java
-
-阶段 2.2：知识库前端页面
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-页面布局：
-
-使用了左右/上下分栏布局：上方为全局筛选（课程选择、搜索），下方左侧为上传区域，右侧为文件列表。
-
-UI 风格采用了 Element Plus 结合 Tailwind CSS，使用了卡片、图标和柔和的配色（Indigo/Gray），视觉效果现代化。
-
-交互逻辑：
-
-课程联动：进入页面自动加载课程列表并选中第一个，文件列表随课程切换而更新。
-
-文件上传：使用 el-upload 的拖拽模式，自定义 http-request 调用后端 /api/knowledge/upload 接口，上传时带有加载状态和课程校验。
-
-状态轮询：实现了智能轮询机制。当文件列表中存在"索引中 (status=1)"的文件时，前端会自动每 5 秒刷新一次列表，直到所有文件索引完成，提升用户体验。
-
-删除保护：删除操作增加了 Popconfirm 二次确认，防止误删。
-
-文件展示：
-
-列表展示了文件名、上传时间、Dify 文档 ID。
-
-根据文件后缀名（PDF/Word/MD）动态显示不同颜色的图标。
-
-状态标签（Tag）直观显示 Dify 索引状态。
-
-生成的关键文件
-
-smart-exam-web/src/views/teacher/KnowledgeBase.vue
-
-阶段 2.3：AI 出题服务逻辑
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-异步架构：
-
-引入了 AsyncConfig 配置类，配置了名为 aiTaskExecutor 的 Spring 线程池。
-
-实现了 QuestionGenerationServiceImpl，其中的 processGenerationAsync 方法使用 @Async("aiTaskExecutor") 标记，确保出题任务在后台异步执行，不阻塞主线程。
-
-核心流程：
-
-任务初始化：接收出题请求，在 sys_ai_task 表创建一条记录，状态标记为“进行中”。
-
-批处理调用：采用循环分批策略（BATCH_SIZE=10），多次调用 Dify Workflow API，防止单次请求超时或生成量过大。
-
-流控保护：每批次调用后休眠 2 秒，避免触发 Dify 频率限制。
-
-结果解析：解析 Dify 返回的 JSON 数据，提取题目内容、选项、答案等信息。
-
-数据一致性与通知：
-
-MD5 查重：更新了 exam_question 表结构，增加 content_hash 字段。在入库前计算题目内容的 MD5 哈希值，并在数据库中检查是否存在相同内容的题目，有效防止重复出题。
-
-进度更新：每批次完成后实时更新 sys_ai_task 的 current_count，便于前端展示进度条。
-
-完成通知：任务全部完成后，自动调用 NoticeService 发送站内信通知用户，并更新任务状态为“完成”或“失败”。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/config/AsyncConfig.java: 线程池配置
-
-Backend/src/main/java/com/university/exam/service/QuestionGenerationService.java: 接口定义
-
-Backend/src/main/java/com/university/exam/service/impl/QuestionGenerationServiceImpl.java: 核心业务实现
-
-Backend/src/main/java/com/university/exam/entity/Question.java: 实体更新
-
-阶段 2.4：题库后端接口
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-核心控制器 (QuestionController)：
-
-AI 出题：/api/question/ai-generate (POST) - 异步启动 AI 出题任务，关联 QuestionGenerationService。支持 指定题目类型 (单选/多选/判断/简答/填空) 生成。
-
-任务查询：/api/question/task/list (GET) - 分页查询当前用户的出题任务进度。
-
-题目管理：
-
-/api/question/create (POST) - 手动录入题目，包含 MD5 查重。
-
-/api/question/update (PUT) - 更新题目，支持内容变更时的自动重哈希和查重。
-
-/api/question/batch (DELETE) - 批量删除题目，包含权限校验（教师只能删自己创建的）。
-
-/api/question/list (GET) - 分页查询，实现了基于角色的数据权限隔离（管理员看所有，教师看关联课程或自己创建的）。
-
-Excel 导入：/api/question/import (POST) - 集成 EasyExcel，实现题目批量导入，包含流式读取和自动入库。
-
-查重回调：/api/internal/question/check-duplicate (POST) - 提供给 Dify 或内部系统的查重检查接口。
-
-辅助组件：
-
-EasyExcel 集成：引入了 easyexcel 依赖，编写了 QuestionExcelDto 和 QuestionExcelListener，实现高效的 Excel 解析。
-
-查重逻辑：在 Service 层实现了统一的 checkDuplicate 方法，基于 MD5 Hash 快速判断题目重复。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/controller/QuestionController.java
-
-Backend/src/main/java/com/university/exam/common/utils/QuestionExcelListener.java
-
-Backend/src/main/java/com/university/exam/common/dto/QuestionExcelDto.java
-
-Backend/pom.xml (更新依赖)
-
-阶段 2.5：题库管理前端
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-页面功能 (QuestionBank.vue)：
-
-多维度筛选：支持按课程、题目内容、题型进行筛选，管理员可查看所有课程题目，教师仅能操作自己权限范围内的题目。
-
-AI 智能出题向导：
-
-实现了弹窗式向导，支持选择课程、输入知识点、选择难度和题型。
-
-集成了后台异步任务，提交后自动唤起任务抽屉。
-
-任务监控抽屉：
-
-实现了右侧抽屉展示 AI 出题任务进度。
-
-采用智能轮询机制，仅在抽屉打开时轮询任务状态，实时更新进度条。
-
-手动录入与编辑：
-
-实现了动态表单，根据选择的题型（单选/多选/判断/简答/填空）自动切换选项录入和答案设置 UI。
-
-支持动态增删选项，并在提交前自动格式化数据以匹配后端存储结构。
-
-数据展示：使用 Element Plus 表格的 expand 功能展示题目的完整信息（含解析、选项），提升信息密度。
-
-生成的关键文件
-
-smart-exam-web/src/views/teacher/QuestionBank.vue
-
-阶段 3.1：组卷与发布后端接口
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-组卷引擎 (PaperService):
-
-实现了 randomCreate 接口：支持按题目类型、数量配置规则，结合 ORDER BY RAND() 进行随机抽题，自动计算总分并生成 Paper 及 PaperQuestion 关联数据。
-
-实现了 manualCreate 接口：支持接收前端选定的一组题目ID及分值，直接生成试卷。
-
-发布管理 (PublishService):
-
-实现了 publishExam 接口：创建考试场次记录，自动根据当前时间判断状态（未开始/进行中）。
-
-集成了通知系统：考试发布成功后，异步调用 NoticeService 生成通知，并向目标班级（部门）下的所有学生发送站内信。
-
-控制器 (Controller):
-
-PaperController: 提供了组卷、列表查询（带权限控制）、删除（带发布状态检查）接口。
-
-ExamPublishController: 提供了考试发布、撤销发布、列表查询接口。
-
-扩展功能:
-
-QuestionService: 增加了 getRandomQuestions 方法，支撑智能组卷逻辑。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/controller/PaperController.java
-
-Backend/src/main/java/com/university/exam/controller/ExamPublishController.java
-
-Backend/src/main/java/com/university/exam/service/impl/PaperServiceImpl.java
-
-Backend/src/main/java/com/university/exam/service/impl/PublishServiceImpl.java
-
-阶段 4.1：考生后端接口
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-核心控制器 (StudentExamController)：
-
-GET /api/exam/my-list：查询学生可用考试列表，实现了基于班级ID (target_dept_ids) 的权限过滤和时间有效性筛选。
-POST /api/exam/start/{publishId}：开始考试接口。实现了断点续考逻辑，创建考试记录，并返回经过脱敏处理（去除答案和解析）的试卷数据。
-POST /api/exam/submit：交卷接口。接收用户答题数据，保存至 exam_record_detail，并触发后台异步阅卷流程。
-
-仪表盘控制器 (StudentDashboardController)：
-
-GET /api/student/dashboard/stats：聚合查询学生的考试记录，计算总考试次数、平均分、及格率及错题数量。
-
-数据传输对象 (DTO)：
-
-定义了 StudentExamDto、ExamPaperVo（脱敏）、SubmitExamRequest 等专用交互对象，规范了前后端数据契约。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/controller/StudentExamController.java
-Backend/src/main/java/com/university/exam/controller/StudentDashboardController.java
-Backend/src/main/java/com/university/exam/common/dto/student/*.java
-Backend/src/main/java/com/university/exam/service/impl/RecordServiceImpl.java (更新)
-Backend/src/main/java/com/university/exam/service/impl/PublishServiceImpl.java (更新)
-阶段 4.2：监考后端接口
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-核心控制器 (ProctorController)：
-
-POST /api/proctor/log：接收考生端上报的异常行为日志（如切屏、离开页面、人脸识别异常等）。
-
-业务逻辑 (ProctorLogService)：
-
-安全校验：强制校验上报日志的 record_id 是否属于当前登录用户，防止伪造数据。
-状态过滤：仅在考试状态为“进行中”时接收日志，忽略已交卷后的上报。
-数据落地：将日志信息存入 exam_proctor_log 表，包含操作类型、时间、截图URL等。
-异常判定：实现了基础的切屏计数逻辑，为后续实现“达到阈值自动强制交卷”预留了扩展点。
-
-数据传输对象 (DTO)：
-
-定义了 ProctorLogDto，包含 actionType (switch_screen, leave_page 等) 和 imgSnapshot 字段。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/controller/ProctorController.java
-Backend/src/main/java/com/university/exam/common/dto/student/ProctorLogDto.java
-Backend/src/main/java/com/university/exam/service/impl/ProctorLogServiceImpl.java (更新)
-Backend/src/main/java/com/university/exam/service/ProctorLogService.java (更新)
-
-阶段 4.4：学生端仪表盘与列表
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-学生仪表盘 (Dashboard.vue):
-
-核心指标 Grid: 采用 Grid 布局展示了“考试场次”、“平均分”、“错题数”和“待参加考试”四个关键维度。使用渐变色卡片提升视觉层级。
-
-数据可视化: 实现了一个轻量级的 SVG 折线图组件，无需引入 ECharts 库即可展示近期成绩趋势（模拟数据），保证了页面加载性能。
-
-交互引导: 卡片支持点击跳转，快速引导学生前往“错题本”或“考试列表”。
-
-考试列表 (ExamList.vue):
-
-状态分类: 使用 el-tabs 实现了全部、进行中、未开始、已结束四种状态的快速筛选。
-
-卡片式布局: 替代传统表格，使用信息密度更高的卡片设计。左侧展示状态图标，中间展示时间/时长/限次信息，右侧展示操作按钮。
-
-智能按钮状态:
-
-进行中: 按钮高亮显示“进入考试”，并带有呼吸灯动画提示紧迫感。
-
-未开始: 按钮置灰并显示具体的开始时间。
-
-已结束: 提供查看结果入口（暂时以 Toast 提示，等待后续结果页接口完善）。
-
-逻辑完善: 前端自动根据时间格式化显示日期范围，对于同一天的考试简化显示逻辑。
-
-生成的关键文件
-
-smart-exam-web/src/views/student/Dashboard.vue
-
-smart-exam-web/src/views/student/ExamList.vue
-
-阶段 4.2：监考后端接口
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-核心控制器 (ProctorController)：
-
-POST /api/proctor/log：接收考生端上报的异常行为日志（如切屏、离开页面、人脸识别异常等）。
-
-业务逻辑 (ProctorLogService)：
-
-安全校验：强制校验上报日志的 record_id 是否属于当前登录用户，防止伪造数据。
-状态过滤：仅在考试状态为“进行中”时接收日志，忽略已交卷后的上报。
-数据落地：将日志信息存入 exam_proctor_log 表，包含操作类型、时间、截图URL等。
-异常判定：实现了基础的切屏计数逻辑，为后续实现“达到阈值自动强制交卷”预留了扩展点。
-
-数据传输对象 (DTO)：
-
-定义了 ProctorLogDto，包含 actionType (switch_screen, leave_page 等) 和 imgSnapshot 字段。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/controller/ProctorController.java
-Backend/src/main/java/com/university/exam/common/dto/student/ProctorLogDto.java
-Backend/src/main/java/com/university/exam/service/impl/ProctorLogServiceImpl.java (更新)
-Backend/src/main/java/com/university/exam/service/ProctorLogService.java (更新)
-
-阶段 5.1：AI阅卷后端服务
-
-完成状态
-
-✅ 已完成
-
-实现说明
-
-核心服务 (AutoGradingService):
-
-实现了异步阅卷逻辑，通过 @Async 配合线程池执行。
-集成了 DifyClient，针对主观题（简答、填空）调用 Dify Workflow 进行评分。
-实现了自动错题本收录逻辑：当 AI 评分低于 60% 时，自动将题目加入错题本。
-分值校验与更新：自动计算题目得分并更新 exam_record 总分及状态。
-
-控制器 (ReviewController):
-
-实现了 GET /api/review/list 接口，支持按课程、姓名、状态筛选，并实现了教师的数据权限隔离（只能看自己课程的）。
-实现了 GET /api/review/detail/{recordId} 接口，聚合展示试卷详情、学生答案、AI 评分和评语。
-实现了 POST /api/review/submit 接口，允许教师人工介入修改分数，系统自动重新计算总分。
-
-数据传输对象 (DTO):
-
-ReviewListResp: 列表页视图对象。
-ReviewSubmitReq: 人工复核请求对象。
-
-生成的关键文件
-
-Backend/src/main/java/com/university/exam/service/AutoGradingService.java
-Backend/src/main/java/com/university/exam/service/impl/AutoGradingServiceImpl.java
-Backend/src/main/java/com/university/exam/controller/ReviewController.java
-Backend/src/main/java/com/university/exam/common/dto/review/ReviewListResp.java
-Backend/src/main/java/com/university/exam/common/dto/review/ReviewSubmitReq.java
-
-更新日期：2025-12-14
-更新人员：高级后端工程师
+学生错题本 (MistakeBook.vue)：采用瀑布流 Grid 布局展示错题卡片，支持展开查看详细解析与移除功能。
