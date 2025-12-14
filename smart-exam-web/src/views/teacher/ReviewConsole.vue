@@ -1,164 +1,164 @@
 <template>
   <div class="review-console">
 
-    <!-- 左侧：考生列表 -->
-    <aside class="console-sidebar">
-      <div class="sidebar-header">
-        <h2 class="sidebar-title">
-          <el-icon><List /></el-icon> 阅卷列表
-        </h2>
-
-        <!-- 搜索与筛选 -->
-        <div class="filter-box">
-          <el-input
-              v-model="searchKeyword"
-              placeholder="搜索姓名或学号..."
-              prefix-icon="Search"
-              clearable
-              class="search-input"
-          />
-          <div class="status-tabs">
-            <span
-                v-for="tab in statusTabs"
-                :key="tab.value"
-                class="tab-item"
-                :class="{ active: currentStatus === tab.value }"
-                @click="currentStatus = tab.value"
-            >
-              {{ tab.label }}
-            </span>
-          </div>
-        </div>
+    <!-- 第一栏：试卷列表 (Paper List) -->
+    <aside class="col-paper">
+      <div class="col-header">
+        <h3 class="col-title"><el-icon><Files /></el-icon> 考试场次</h3>
       </div>
-
-      <!-- 列表内容 -->
-      <div class="student-list" v-loading="listLoading">
-        <div
-            v-for="item in filteredList"
-            :key="item.recordId"
-            class="student-card"
-            :class="{ 'active': currentRecordId === item.recordId }"
-            @click="handleSelectStudent(item)"
-        >
-          <div class="card-top">
-            <span class="student-name">{{ item.studentName }}</span>
-            <span class="status-tag" :class="getStatusClass(item.status)">
-              {{ getStatusText(item.status) }}
-            </span>
+      <el-scrollbar class="col-scroll">
+        <div class="paper-list" v-loading="paperLoading">
+          <div
+              v-for="paper in paperList"
+              :key="paper.id"
+              class="paper-item"
+              :class="{ active: currentPaperId === paper.id }"
+              @click="handleSelectPaper(paper)"
+          >
+            <div class="paper-name" :title="paper.title">{{ paper.title }}</div>
+            <div class="paper-meta">
+              <span>{{ paper.courseName }}</span>
+              <span class="badge" :class="paper.status === 2 ? 'ongoing' : 'ended'">
+                {{ paper.status === 2 ? '进行中' : '已结束' }}
+              </span>
+            </div>
           </div>
-          <div class="card-bottom">
-            <span class="student-id">ID: {{ item.studentNumber }}</span>
-            <span class="score-info">客观分: {{ item.objectiveScore || 0 }}</span>
-          </div>
+          <div v-if="paperList.length === 0" class="empty-text">暂无需要阅卷的考试</div>
         </div>
-
-        <div v-if="filteredList.length === 0" class="empty-state">
-          暂无数据
-        </div>
-      </div>
+      </el-scrollbar>
     </aside>
 
-    <!-- 右侧：阅卷详情 -->
-    <main class="console-main">
-      <div v-if="!currentRecordId" class="empty-placeholder">
-        <el-icon class="placeholder-icon"><DocumentChecked /></el-icon>
-        <p>请从左侧选择一位考生开始阅卷</p>
+    <!-- 第二栏：考生列表 (Student List) -->
+    <aside class="col-student">
+      <div class="col-header">
+        <h3 class="col-title"><el-icon><User /></el-icon> 考生名单</h3>
+        <!-- 筛选器 -->
+        <div class="filter-row">
+          <el-input
+              v-model="searchKeyword"
+              placeholder="搜索姓名..."
+              size="small"
+              prefix-icon="Search"
+              clearable
+              class="filter-input"
+          />
+          <el-select v-model="currentStatus" size="small" class="filter-select" placeholder="状态">
+            <el-option label="全部" value="all" />
+            <el-option label="待批" value="pending" />
+            <el-option label="已批" value="reviewed" />
+          </el-select>
+        </div>
+      </div>
+
+      <el-scrollbar class="col-scroll">
+        <div v-if="!currentPaperId" class="empty-placeholder-small">
+          请先选择左侧试卷
+        </div>
+        <div v-else class="student-list" v-loading="studentLoading">
+          <div
+              v-for="item in filteredStudentList"
+              :key="item.recordId"
+              class="student-item"
+              :class="{ active: currentRecordId === item.recordId }"
+              @click="handleSelectStudent(item)"
+          >
+            <div class="student-info">
+              <span class="s-name">{{ item.studentName }}</span>
+              <span class="s-id">{{ item.studentNumber }}</span>
+            </div>
+            <div class="student-status">
+              <span class="status-dot" :class="item.status === 2 ? 'pending' : 'success'"></span>
+              <span class="status-text">{{ item.status === 2 ? '待阅' : '已阅' }}</span>
+            </div>
+          </div>
+          <div v-if="filteredStudentList.length === 0" class="empty-text">无匹配考生</div>
+        </div>
+      </el-scrollbar>
+    </aside>
+
+    <!-- 第三栏：阅卷详情 (Review Detail) -->
+    <main class="col-detail">
+      <div v-if="!currentRecordId" class="empty-placeholder-large">
+        <el-icon class="placeholder-icon"><EditPen /></el-icon>
+        <p>请选择一位考生开始阅卷</p>
       </div>
 
       <template v-else>
-        <!-- 详情头部 -->
-        <header class="main-header">
-          <div class="header-info">
-            <div class="student-meta">
-              <span class="meta-name">{{ currentStudent?.studentName }}</span>
-              <span class="meta-id">{{ currentStudent?.studentNumber }}</span>
-            </div>
-            <div class="exam-meta">
-              <span>{{ examTitle }}</span>
-              <el-divider direction="vertical" />
-              <span>提交时间: {{ formatTime(currentStudent?.submitTime) }}</span>
+        <!-- 顶部固定栏 -->
+        <header class="detail-header">
+          <div class="dh-left">
+            <div class="dh-title">{{ currentPaper?.title }}</div>
+            <div class="dh-student">
+              正在批阅: <span class="highlight">{{ currentStudent?.studentName }}</span>
+              ({{ currentStudent?.studentNumber }})
             </div>
           </div>
-          <div class="header-actions">
-            <el-button type="primary" size="large" @click="submitReview" :loading="submitting">
-              <el-icon class="el-icon--left"><Check /></el-icon> 提交复核
+          <div class="dh-right">
+            <div class="score-preview">
+              客观分: <strong>{{ currentStudent?.objectiveScore }}</strong>
+            </div>
+            <el-button type="primary" :loading="submitting" @click="submitReview">
+              <el-icon class="el-icon--left"><Check /></el-icon> 提交成绩
             </el-button>
           </div>
         </header>
 
-        <!-- 试题内容区 -->
-        <el-scrollbar class="main-content">
-          <div class="questions-wrapper">
+        <!-- 试题内容滚动区 -->
+        <el-scrollbar class="detail-content">
+          <div class="review-wrapper">
             <div
                 v-for="(q, index) in subjectiveQuestions"
                 :key="q.id"
-                class="review-card"
+                class="question-card"
             >
-              <!-- 题目区域 -->
-              <div class="q-section">
-                <div class="q-header">
-                  <span class="q-index">第 {{ q.sortOrder || index + 1 }} 题</span>
-                  <span class="q-type">主观题</span>
-                  <span class="q-score">满分 {{ q.score }}</span>
-                </div>
-                <div class="q-content" v-html="formatContent(q.content)"></div>
+              <!-- 题目头 -->
+              <div class="qc-header">
+                <span class="qc-index">第 {{ q.sortOrder || index + 1 }} 题</span>
+                <span class="qc-tag">主观题</span>
+                <span class="qc-score">满分: {{ q.score }}</span>
               </div>
 
-              <!-- 学生答案 -->
-              <div class="answer-section">
-                <div class="section-label">学生作答</div>
-                <div class="student-answer-box">
-                  {{ q.studentAnswer || '（未作答）' }}
-                </div>
-              </div>
+              <!-- 题目内容 -->
+              <div class="qc-body">
+                <div class="q-text" v-html="formatContent(q.content)"></div>
 
-              <!-- 评分区域 (AI + 人工) -->
-              <div class="grading-section">
-                <!-- AI 建议 -->
-                <div class="ai-suggestion">
-                  <div class="ai-header">
-                    <span class="ai-title"><el-icon><Cpu /></el-icon> AI 智能预评</span>
-                    <el-button
-                        type="success"
-                        link
-                        size="small"
-                        @click="adoptAiScore(q)"
-                    >
-                      采纳建议
-                    </el-button>
-                  </div>
-                  <div class="ai-body">
-                    <div class="ai-score-row">
-                      建议得分：<strong class="score-val">{{ q.aiScore || 0 }}</strong>
-                    </div>
-                    <div class="ai-reason">
-                      {{ q.aiComment || 'AI 暂无详细评语' }}
-                    </div>
-                  </div>
+                <!-- 学生答案 -->
+                <div class="student-answer">
+                  <div class="sa-label">考生作答</div>
+                  <div class="sa-content">{{ q.studentAnswer || '（考生未作答）' }}</div>
                 </div>
 
-                <!-- 人工打分 -->
-                <div class="manual-grading">
-                  <div class="section-label">人工复核</div>
-                  <div class="grading-form">
-                    <div class="form-item">
-                      <span class="label">得分：</span>
+                <!-- 评分区域 -->
+                <div class="grading-area">
+                  <!-- AI 建议 -->
+                  <div class="ai-box">
+                    <div class="ai-head">
+                      <span><el-icon><Cpu /></el-icon> AI 预评</span>
+                      <el-button type="success" link size="small" @click="adoptAiScore(q)">采纳</el-button>
+                    </div>
+                    <div class="ai-score">建议得分: <strong>{{ q.aiScore || 0 }}</strong></div>
+                    <div class="ai-comment">{{ q.aiComment || '暂无评语' }}</div>
+                  </div>
+
+                  <!-- 人工打分 -->
+                  <div class="manual-box">
+                    <div class="manual-head">人工复核</div>
+                    <div class="form-row">
+                      <span class="label">得分</span>
                       <el-input-number
                           v-model="q.finalScore"
                           :min="0"
                           :max="q.score"
-                          :precision="1"
+                          size="small"
                           controls-position="right"
-                          class="score-input"
                       />
                     </div>
-                    <div class="form-item block">
-                      <span class="label">评语：</span>
+                    <div class="form-row">
+                      <span class="label">评语</span>
                       <el-input
                           v-model="q.teacherComment"
-                          type="textarea"
-                          rows="2"
-                          placeholder="请输入评语（可选）"
+                          size="small"
+                          placeholder="请输入评语..."
                       />
                     </div>
                   </div>
@@ -166,8 +166,8 @@
               </div>
             </div>
 
-            <div class="footer-tip">
-              已显示所有主观题，确认无误后请点击右上角提交。
+            <div class="footer-msg">
+              已显示所有待阅题目
             </div>
           </div>
         </el-scrollbar>
@@ -178,421 +178,429 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router' // 假设从路由参数获取 examId
-import { List, Search, DocumentChecked, Check, Cpu } from '@element-plus/icons-vue'
+import { Files, User, Search, EditPen, Check, Cpu } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-// 假设有如下 API，需根据实际后端情况调整
-import request from '@/utils/request'
+// import request from '@/utils/request' // 暂用 Mock
 
-// --- Mock Data Types (按实际 DTO 调整) ---
+// --- Interfaces ---
+interface PaperItem {
+  id: number
+  title: string
+  courseName: string
+  status: number // 2:进行中, 3:已结束
+}
+
 interface ReviewStudent {
   recordId: number
   studentName: string
   studentNumber: string
-  status: number // 2-待批改, 3-已完成
+  status: number // 2:待批, 3:已批
   objectiveScore: number
   submitTime: string
 }
 
 interface SubjectiveQuestion {
-  id: number // questionId
+  id: number
   sortOrder: number
   content: string
   score: number
   studentAnswer: string
   aiScore: number
   aiComment: string
-  finalScore: number // 绑定输入框
-  teacherComment: string // 绑定输入框
+  finalScore: number
+  teacherComment: string
 }
 
 // --- State ---
-const route = useRoute()
-const examId = route.query.examId || 1 // 临时 Mock
-const examTitle = ref('2024年期末考试 - Java程序设计') // 应该从 API 获取
+// Column 1
+const paperLoading = ref(false)
+const paperList = ref<PaperItem[]>([])
+const currentPaperId = ref<number | null>(null)
+const currentPaper = ref<PaperItem | null>(null)
 
-const listLoading = ref(false)
+// Column 2
+const studentLoading = ref(false)
 const rawStudentList = ref<ReviewStudent[]>([])
 const searchKeyword = ref('')
-const currentStatus = ref('pending') // all, pending, reviewed
-
-const statusTabs = [
-  { label: '全部', value: 'all' },
-  { label: '待批改', value: 'pending' },
-  { label: '已批改', value: 'reviewed' }
-]
-
+const currentStatus = ref('all') // all, pending, reviewed
 const currentRecordId = ref<number | null>(null)
 const currentStudent = ref<ReviewStudent | null>(null)
+
+// Column 3
 const subjectiveQuestions = ref<SubjectiveQuestion[]>([])
 const submitting = ref(false)
 
 // --- Methods ---
 
-// 1. 获取考生列表
-const fetchStudentList = async () => {
-  listLoading.value = true
+// 1. 获取试卷列表
+const fetchPapers = async () => {
+  paperLoading.value = true
   try {
-    // const res = await request.get('/api/review/list', { params: { examId } })
-    // Mock Data
-    await new Promise(r => setTimeout(r, 500))
-    rawStudentList.value = [
-      { recordId: 101, studentName: '张三', studentNumber: '2021001', status: 2, objectiveScore: 58, submitTime: '2023-12-20 10:30' },
-      { recordId: 102, studentName: '李四', studentNumber: '2021002', status: 2, objectiveScore: 42, submitTime: '2023-12-20 10:32' },
-      { recordId: 103, studentName: '王五', studentNumber: '2021003', status: 3, objectiveScore: 60, submitTime: '2023-12-20 10:25' },
+    // const res = await request.get('/api/teacher/papers/reviewable')
+    // Mock
+    await new Promise(r => setTimeout(r, 300))
+    paperList.value = [
+      { id: 1, title: 'Java程序设计期末考试', courseName: 'Java基础', status: 3 },
+      { id: 2, title: '数据库原理测验', courseName: '数据库', status: 2 },
+      { id: 3, title: '数据结构第一次月考', courseName: '数据结构', status: 3 },
     ]
-  } catch (e) {
-    ElMessage.error('获取列表失败')
   } finally {
-    listLoading.value = false
+    paperLoading.value = false
   }
 }
 
-// 2. 筛选逻辑
-const filteredList = computed(() => {
-  return rawStudentList.value.filter(item => {
-    // 状态筛选
+// 2. 选择试卷 -> 加载学生
+const handleSelectPaper = async (paper: PaperItem) => {
+  currentPaperId.value = paper.id
+  currentPaper.value = paper
+  currentRecordId.value = null // 重置选中学生
+  studentLoading.value = true
+
+  try {
+    // const res = await request.get(`/api/review/paper/${paper.id}/students`)
+    // Mock
+    await new Promise(r => setTimeout(r, 300))
+    rawStudentList.value = Array.from({ length: 10 }).map((_, i) => ({
+      recordId: 100 + i,
+      studentName: `学生${i + 1}`,
+      studentNumber: `202400${i + 1}`,
+      status: i < 5 ? 2 : 3, // 前5个待批，后5个已批
+      objectiveScore: 40 + Math.floor(Math.random() * 20),
+      submitTime: '2024-01-15 10:00'
+    }))
+  } finally {
+    studentLoading.value = false
+  }
+}
+
+// 3. 筛选学生
+const filteredStudentList = computed(() => {
+  return rawStudentList.value.filter(s => {
     let statusMatch = true
-    if (currentStatus.value === 'pending') statusMatch = item.status === 2
-    if (currentStatus.value === 'reviewed') statusMatch = item.status === 3
+    if (currentStatus.value === 'pending') statusMatch = s.status === 2
+    if (currentStatus.value === 'reviewed') statusMatch = s.status === 3
 
-    // 关键词筛选
-    const keywordMatch = item.studentName.includes(searchKeyword.value) ||
-        item.studentNumber.includes(searchKeyword.value)
+    const kw = searchKeyword.value.trim()
+    const kwMatch = !kw || s.studentName.includes(kw) || s.studentNumber.includes(kw)
 
-    return statusMatch && keywordMatch
+    return statusMatch && kwMatch
   })
 })
 
-// 3. 选择考生获取详情
+// 4. 选择学生 -> 加载详情
 const handleSelectStudent = async (student: ReviewStudent) => {
   currentRecordId.value = student.recordId
   currentStudent.value = student
 
-  // Fetch Detail
-  try {
-    // const res = await request.get(`/api/review/detail/${student.recordId}`)
-    // Mock Data
-    const mockQuestions: SubjectiveQuestion[] = [
-      {
-        id: 1, sortOrder: 1, score: 10,
-        content: '请简述 Spring IOC 的原理。',
-        studentAnswer: 'IOC 就是控制反转，把对象的创建交给容器管理。',
-        aiScore: 8,
-        aiComment: '回答了基本概念，但未涉及依赖注入细节。',
-        finalScore: student.status === 3 ? 8 : 0, // 如果已批改，回显分数
-        teacherComment: student.status === 3 ? '同AI' : ''
-      },
-      {
-        id: 2, sortOrder: 2, score: 15,
-        content: '什么是线程安全？Java 中如何保证线程安全？',
-        studentAnswer: '不知道。',
-        aiScore: 0,
-        aiComment: '未作答或回答错误。',
-        finalScore: 0,
-        teacherComment: ''
-      }
-    ]
-    // 默认如果未批改，初始化 finalScore 为 AI 分数建议？或者 0？这里设为 0 让老师确认
-    // 为了方便，这里演示：如果是待批改，预填 AI 分数但需老师确认
-    if (student.status === 2) {
-      mockQuestions.forEach(q => {
-        q.finalScore = q.aiScore
-      })
+  // Mock Detail
+  subjectiveQuestions.value = [
+    {
+      id: 1, sortOrder: 1, score: 10,
+      content: '请解释什么是死锁，以及产生的四个必要条件。',
+      studentAnswer: '死锁是指两个或两个以上的进程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞的现象。',
+      aiScore: 6,
+      aiComment: '回答了死锁定义，但缺失了四个必要条件（互斥、占有且等待、不可抢占、循环等待）。',
+      finalScore: student.status === 3 ? 6 : 6, // 默认填入AI分
+      teacherComment: ''
+    },
+    {
+      id: 2, sortOrder: 2, score: 15,
+      content: '简述 TCP 三次握手过程。',
+      studentAnswer: '第一次：客户端发SYN；第二次：服务端回SYN+ACK；第三次：客户端回ACK。',
+      aiScore: 15,
+      aiComment: '回答准确，逻辑清晰。',
+      finalScore: student.status === 3 ? 15 : 15,
+      teacherComment: ''
     }
-    subjectiveQuestions.value = mockQuestions
-  } catch (e) {
-    ElMessage.error('获取试卷详情失败')
-  }
+  ]
 }
 
-// 4. 采纳 AI 建议
+// 5. 采纳 AI
 const adoptAiScore = (q: SubjectiveQuestion) => {
   q.finalScore = q.aiScore
   q.teacherComment = q.aiComment
-  ElMessage.success('已采纳 AI 评分')
+  ElMessage.success('已采纳')
 }
 
-// 5. 提交复核
+// 6. 提交
 const submitReview = async () => {
-  if (!currentRecordId.value) return
-
   submitting.value = true
   try {
-    const payload = {
-      recordId: currentRecordId.value,
-      reviews: subjectiveQuestions.value.map(q => ({
-        questionId: q.id,
-        score: q.finalScore,
-        comment: q.teacherComment
-      }))
-    }
-    // await request.post('/api/review/submit', payload)
-    await new Promise(r => setTimeout(r, 1000)) // Mock API delay
+    await new Promise(r => setTimeout(r, 800)) // Mock
+    ElMessage.success('提交成功，自动跳转下一位')
 
-    ElMessage.success('提交成功')
+    // 逻辑：将当前学生标为已批，自动选下一个待批学生
+    if (currentStudent.value) currentStudent.value.status = 3
 
-    // 更新本地状态
-    if (currentStudent.value) {
-      currentStudent.value.status = 3
+    const nextPending = filteredStudentList.value.find(s => s.status === 2 && s.recordId !== currentRecordId.value)
+    if (nextPending) {
+      handleSelectStudent(nextPending)
+    } else {
+      currentRecordId.value = null // 无待批
     }
-    // 自动跳到下一个？或者留在当前
-  } catch (e) {
-    ElMessage.error('提交失败')
   } finally {
     submitting.value = false
   }
 }
 
-// Tools
-const getStatusText = (status: number) => {
-  const map: Record<number, string> = { 2: '待批改', 3: '已完成' }
-  return map[status] || '未知'
-}
-
-const getStatusClass = (status: number) => {
-  return status === 2 ? 'tag-pending' : 'tag-success'
-}
-
-const formatTime = (timeStr?: string) => timeStr || '--'
-
-const formatContent = (content: string) => {
-  if (!content) return ''
-  return content.replace(/\n/g, '<br/>')
-}
+const formatContent = (val: string) => val ? val.replace(/\n/g, '<br/>') : ''
 
 onMounted(() => {
-  fetchStudentList()
+  fetchPapers()
 })
 </script>
 
 <style scoped>
-/* 原生 CSS 样式重构 */
+/* 三栏布局 (Three-Pane Layout)
+  Style: Native CSS (Notion/Linear-like)
+*/
 
 .review-console {
   display: flex;
-  height: calc(100vh - 60px); /* 减去顶部 Navbar 高度，假设是 60px */
-  background-color: #f5f7fa;
+  height: calc(100vh - 64px); /* 假设 Navbar 高度 64px */
+  background-color: #f7f9fc;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #1a202c;
   overflow: hidden;
 }
 
-/* --- 左侧侧边栏 --- */
-.console-sidebar {
-  width: 320px;
-  background-color: #fff;
+/* --- 第一栏：试卷列表 --- */
+.col-paper {
+  width: 260px;
+  background-color: #ffffff;
   border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  box-shadow: 2px 0 8px rgba(0,0,0,0.02);
 }
 
-.sidebar-header {
-  padding: 20px;
+.col-header {
+  height: 56px;
   border-bottom: 1px solid #f0f2f5;
-  background-color: #fff;
-  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 16px;
+  background: #fdfdfd;
 }
 
-.sidebar-title {
-  font-size: 16px;
+.col-title {
+  font-size: 14px;
   font-weight: 700;
-  color: #1f2937;
-  margin: 0 0 16px 0;
+  color: #4a5568;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.filter-box {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* 状态 Tabs */
-.status-tabs {
-  display: flex;
-  background-color: #f3f4f6;
-  border-radius: 6px;
-  padding: 4px;
-}
-
-.tab-item {
+.col-scroll {
   flex: 1;
-  text-align: center;
-  font-size: 12px;
-  color: #6b7280;
-  padding: 6px 0;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.2s;
-  font-weight: 500;
 }
 
-.tab-item:hover {
-  color: #374151;
+.paper-list {
+  padding: 8px;
 }
 
-.tab-item.active {
-  background-color: #fff;
-  color: #4f46e5;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  font-weight: 600;
-}
-
-/* 列表区 */
-.student-list {
-  flex: 1;
-  overflow-y: auto;
+.paper-item {
   padding: 12px;
-}
-
-.student-card {
-  background-color: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
-  position: relative;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
 }
 
-.student-card:hover {
-  border-color: #cbd5e0;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+.paper-item:hover {
+  background-color: #f7fafc;
 }
 
-.student-card.active {
-  border-color: #4f46e5;
-  background-color: #eef2ff;
-  box-shadow: 0 0 0 1px #4f46e5 inset;
+.paper-item.active {
+  background-color: #ebf4ff;
+  border-color: #bee3f8;
 }
 
-.card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-}
-
-.student-name {
+.paper-name {
   font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: #2d3748;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.status-tag {
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+.paper-item.active .paper-name {
+  color: #3182ce;
 }
 
-.tag-pending {
-  background-color: #fff7ed;
-  color: #c2410c;
-  border: 1px solid #ffedd5;
-}
-
-.tag-success {
-  background-color: #f0fdf4;
-  color: #15803d;
-  border: 1px solid #dcfce7;
-}
-
-.card-bottom {
+.paper-meta {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #6b7280;
+  color: #718096;
 }
 
-.empty-state {
-  text-align: center;
-  padding: 40px;
-  color: #9ca3af;
-  font-size: 13px;
+.badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  transform: scale(0.9);
 }
 
-/* --- 右侧主内容 --- */
-.console-main {
-  flex: 1;
+.badge.ongoing { background: #f0fff4; color: #38a169; }
+.badge.ended { background: #edf2f7; color: #718096; }
+
+/* --- 第二栏：学生列表 --- */
+.col-student {
+  width: 280px;
+  background-color: #fafbfc;
+  border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  background-color: #f9fafb;
-}
-
-.empty-placeholder {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
-}
-
-.placeholder-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  color: #e5e7eb;
-}
-
-.main-header {
-  height: 64px;
-  background-color: #fff;
-  border-bottom: 1px solid #e5e7eb;
-  padding: 0 32px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
   flex-shrink: 0;
 }
 
-.header-info {
+.col-student .col-header {
+  height: auto;
+  padding: 12px 16px;
+  gap: 10px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-input {
+  flex: 1;
+}
+
+.filter-select {
+  width: 80px;
+}
+
+.student-list {
+  padding: 8px;
+}
+
+.student-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+}
+
+.student-item:hover {
+  border-color: #cbd5e0;
+}
+
+.student-item.active {
+  background-color: #fff;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 1px #4f46e5 inset;
+}
+
+.student-info {
   display: flex;
   flex-direction: column;
 }
 
-.student-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 4px;
+.s-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
 }
 
-.meta-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.meta-id {
-  font-size: 13px;
-  color: #6b7280;
-  font-family: monospace;
-}
-
-.exam-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.s-id {
   font-size: 12px;
   color: #9ca3af;
 }
 
-.main-content {
-  flex: 1;
-  padding: 0;
+.student-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
 }
 
-.questions-wrapper {
-  max-width: 900px;
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.pending { background-color: #f59e0b; }
+.status-dot.success { background-color: #10b981; }
+
+.status-text {
+  color: #6b7280;
+}
+
+/* --- 第三栏：详情 --- */
+.col-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #f7f9fc;
+  min-width: 0;
+}
+
+.detail-header {
+  height: 64px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.dh-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.dh-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.dh-student {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.dh-student .highlight {
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.dh-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.score-preview {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.detail-content {
+  flex: 1;
+}
+
+.review-wrapper {
+  max-width: 800px;
   margin: 0 auto;
   padding: 32px;
   display: flex;
@@ -600,174 +608,157 @@ onMounted(() => {
   gap: 24px;
 }
 
-/* 题目卡片 */
-.review-card {
+.question-card {
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border-radius: 8px;
   border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   overflow: hidden;
 }
 
-/* 1. 题目区 */
-.q-section {
-  padding: 24px;
+.qc-header {
+  padding: 16px 24px;
   border-bottom: 1px solid #f3f4f6;
   background-color: #fff;
-}
-
-.q-header {
   display: flex;
   gap: 12px;
   align-items: center;
-  margin-bottom: 12px;
 }
 
-.q-index {
-  font-size: 14px;
-  font-weight: 700;
-  color: #111827;
+.qc-index { font-weight: 700; font-size: 14px; }
+.qc-tag { font-size: 12px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #4b5563; }
+.qc-score { font-size: 12px; color: #9ca3af; margin-left: auto; }
+
+.qc-body {
+  padding: 24px;
 }
 
-.q-type {
-  font-size: 12px;
-  background-color: #f3f4f6;
-  color: #4b5563;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.q-score {
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.q-content {
+.q-text {
   font-size: 15px;
-  color: #374151;
+  color: #1f2937;
+  margin-bottom: 20px;
   line-height: 1.6;
 }
 
-/* 2. 答案区 */
-.answer-section {
-  padding: 20px 24px;
-  background-color: #fafafa; /* 稍微深一点的灰白 */
+.student-answer {
+  background-color: #f9fafb;
+  border-radius: 6px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 20px;
 }
 
-.section-label {
+.sa-label {
   font-size: 12px;
-  color: #9ca3af;
+  color: #6b7280;
   margin-bottom: 8px;
   font-weight: 600;
 }
 
-.student-answer-box {
-  background-color: #fff;
-  border: 1px solid #e5e7eb;
-  border-left: 4px solid #4f46e5; /* 强调线 */
-  padding: 16px;
-  border-radius: 4px;
+.sa-content {
   font-size: 15px;
-  color: #1f2937;
-  line-height: 1.6;
+  color: #111827;
   white-space: pre-wrap;
 }
 
-/* 3. 评分区 */
-.grading-section {
-  padding: 24px;
+.grading-area {
   display: flex;
-  gap: 24px;
-}
-
-/* AI 建议 */
-.ai-suggestion {
-  flex: 1;
-  background-color: #eff6ff; /* 蓝色底 */
-  border: 1px solid #dbeafe;
-  border-radius: 8px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.ai-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.ai-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #1e40af;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ai-score-row {
-  font-size: 14px;
-  color: #1e3a8a;
-  margin-bottom: 8px;
-}
-
-.score-val {
-  font-size: 18px;
-  color: #2563eb;
-}
-
-.ai-reason {
-  font-size: 13px;
-  color: #4b5563;
-  line-height: 1.5;
-  background: rgba(255,255,255,0.5);
-  padding: 8px;
-  border-radius: 4px;
-}
-
-/* 人工评分 */
-.manual-grading {
-  flex: 1;
-  background-color: #fff;
-  border: 1px dashed #d1d5db; /* 虚线框 */
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.grading-form {
-  display: flex;
-  flex-direction: column;
   gap: 16px;
 }
 
-.form-item {
+.ai-box, .manual-box {
+  flex: 1;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.ai-box {
+  background-color: #eff6ff;
+  border: 1px solid #dbeafe;
+}
+
+.ai-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e40af;
+  margin-bottom: 8px;
+}
+
+.ai-score {
+  font-size: 14px;
+  color: #1e3a8a;
+  margin-bottom: 6px;
+}
+
+.ai-comment {
+  font-size: 13px;
+  color: #60a5fa;
+  color: #1f2937;
+  opacity: 0.8;
+  line-height: 1.4;
+}
+
+.manual-box {
+  background-color: #fff;
+  border: 1px dashed #d1d5db;
+}
+
+.manual-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.form-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.form-item.block {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.form-item .label {
+.form-row .label {
+  width: 32px;
   font-size: 13px;
-  color: #374151;
-  font-weight: 600;
+  color: #6b7280;
 }
 
-.score-input {
-  width: 140px;
-}
-
-.footer-tip {
+.empty-text {
   text-align: center;
   color: #9ca3af;
   font-size: 13px;
-  margin-bottom: 40px;
+  padding: 20px;
+}
+
+.empty-placeholder-small {
+  text-align: center;
+  color: #cbd5e0;
+  font-size: 13px;
+  margin-top: 40px;
+}
+
+.empty-placeholder-large {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #9ca3af;
+}
+
+.placeholder-icon {
+  font-size: 64px;
+  color: #e5e7eb;
+  margin-bottom: 24px;
+}
+
+.footer-msg {
+  text-align: center;
+  color: #cbd5e0;
+  font-size: 12px;
+  padding-bottom: 40px;
 }
 </style>

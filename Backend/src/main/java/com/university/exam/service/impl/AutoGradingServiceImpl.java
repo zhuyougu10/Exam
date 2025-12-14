@@ -4,18 +4,17 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.university.exam.common.exception.BizException;
 import com.university.exam.common.utils.DifyClient;
 import com.university.exam.entity.MistakeBook;
 import com.university.exam.entity.Question;
 import com.university.exam.entity.Record;
 import com.university.exam.entity.RecordDetail;
+import com.university.exam.mapper.RecordMapper; // 核心修改：引入 Mapper
 import com.university.exam.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -26,6 +25,10 @@ import java.util.Map;
 
 /**
  * AI 自动阅卷服务实现类
+ * <p>
+ * 修复记录：
+ * 2025-12-14: 将注入 RecordService 改为 RecordMapper，解决与 RecordServiceImpl 的循环依赖问题。
+ * </p>
  *
  * @author MySQL数据库架构师
  * @since 2025-12-14
@@ -36,7 +39,12 @@ import java.util.Map;
 public class AutoGradingServiceImpl implements AutoGradingService {
 
     private final DifyClient difyClient;
-    private final RecordService recordService;
+    
+    // ⚠️ 核心修改：这里不再注入 RecordService，而是直接注入 RecordMapper
+    // 依赖链变为：RecordServiceImpl -> AutoGradingServiceImpl -> RecordMapper
+    // 从而打破了 RecordServiceImpl <-> AutoGradingServiceImpl 的死循环
+    private final RecordMapper recordMapper; 
+    
     private final RecordDetailService recordDetailService;
     private final QuestionService questionService;
     private final MistakeBookService mistakeBookService;
@@ -47,8 +55,8 @@ public class AutoGradingServiceImpl implements AutoGradingService {
         log.info(">>> 开始 AI 自动阅卷: recordId={}", recordId);
         
         try {
-            // 1. 获取必要的上下文
-            Record record = recordService.getById(recordId);
+            // 1. 获取必要的上下文 (改用 Mapper 查询)
+            Record record = recordMapper.selectById(recordId);
             if (record == null) {
                 log.warn("考试记录不存在: {}", recordId);
                 return;
@@ -82,7 +90,6 @@ public class AutoGradingServiceImpl implements AutoGradingService {
                 }
 
                 // 3. 筛选主观题 (简答-4, 填空-5) 且未批改的进行 AI 评分
-                // 也可以设置策略：强制重批
                 if ((q.getType() == 4 || q.getType() == 5) && detail.getIsMarked() == 0) {
                     // 调用 Dify
                     Map<String, Object> inputs = new HashMap<>();
@@ -98,9 +105,9 @@ public class AutoGradingServiceImpl implements AutoGradingService {
                         if (result != null && result.containsKey("data")) {
                             Map data = (Map) result.get("data");
                             Map outputs = (Map) data.get("outputs");
-                            // 假设 Dify 返回的 text 是 JSON 字符串: {"score": 5.0, "comment": "..."}
+                            
+                            // 解析 Dify 返回
                             String outputJson = (String) outputs.get("text"); 
-                            // 清洗可能存在的 Markdown 标记
                             outputJson = cleanJsonString(outputJson);
 
                             JSONObject aiRes = JSONUtil.parseObj(outputJson);
@@ -137,7 +144,6 @@ public class AutoGradingServiceImpl implements AutoGradingService {
                         }
                     } catch (Exception e) {
                         log.error("题目[{}] Dify 调用失败", q.getId(), e);
-                        // 失败可以标记为未批改，等待人工
                     }
                 }
                 
@@ -151,17 +157,15 @@ public class AutoGradingServiceImpl implements AutoGradingService {
             if (hasUpdates) {
                 recordDetailService.updateBatchById(details);
                 
-                // 更新主记录
+                // 更新主记录 (改用 Mapper 更新)
                 record.setTotalScore(totalScore);
-                // 检查是否所有题目都已批改
                 boolean allMarked = details.stream().allMatch(d -> d.getIsMarked() == 1);
                 record.setStatus(allMarked ? (byte) 3 : (byte) 2); // 3-已完成批阅
                 record.setUpdateTime(LocalDateTime.now());
-                recordService.updateById(record);
+                recordMapper.updateById(record);
 
-                // 保存错题
+                // 保存错题 (保持原样)
                 if (!newMistakes.isEmpty()) {
-                    // 简单的查重逻辑，避免重复插入
                     for (MistakeBook mb : newMistakes) {
                         long exists = mistakeBookService.count(new LambdaQueryWrapper<MistakeBook>()
                                 .eq(MistakeBook::getUserId, mb.getUserId())
@@ -169,7 +173,6 @@ public class AutoGradingServiceImpl implements AutoGradingService {
                         if (exists == 0) {
                             mistakeBookService.save(mb);
                         } else {
-                            // 更新错误次数
                             MistakeBook existing = mistakeBookService.getOne(new LambdaQueryWrapper<MistakeBook>()
                                     .eq(MistakeBook::getUserId, mb.getUserId())
                                     .eq(MistakeBook::getQuestionId, mb.getQuestionId()));
