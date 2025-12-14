@@ -64,6 +64,7 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
         publish.setEndTime(req.getEndTime());
         publish.setLimitCount(req.getLimitCount() != null ? req.getLimitCount() : 1);
         publish.setPassword(req.getPassword());
+        publish.setAllowEarlyAnalysis(req.getAllowEarlyAnalysis());
         
         byte status = now.isBefore(req.getStartTime()) ? (byte)0 : (byte)1;
         publish.setStatus(status);
