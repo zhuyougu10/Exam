@@ -1,5 +1,6 @@
 package com.university.exam.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.university.exam.common.dto.student.ExamPaperVo;
 import com.university.exam.common.dto.student.StudentExamDto;
 import com.university.exam.common.dto.student.SubmitExamRequest;
@@ -7,6 +8,8 @@ import com.university.exam.common.exception.BizException;
 import com.university.exam.common.result.Result;
 import com.university.exam.common.utils.JwtUtils;
 import com.university.exam.common.vo.StudentExamResultVo;
+import com.university.exam.entity.Publish;
+import com.university.exam.entity.Record;
 import com.university.exam.service.PublishService;
 import com.university.exam.service.RecordService;
 import io.jsonwebtoken.Claims;
@@ -14,6 +17,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -33,14 +38,12 @@ public class StudentExamController {
 
     /**
      * 获取当前学生可参加的考试列表
-     * GET /api/exam/my-list
      */
     @GetMapping("/my-list")
     public Result<List<StudentExamDto>> getMyExamList(HttpServletRequest request) {
         String token = getToken(request);
         Long userId = jwtUtils.getUserIdFromToken(token);
         
-        // 解析 deptId
         Claims claims = jwtUtils.parseToken(token);
         Long deptId = claims.get("deptId", Long.class);
 
@@ -50,7 +53,6 @@ public class StudentExamController {
 
     /**
      * 开始考试
-     * POST /api/exam/start/{publishId}
      */
     @PostMapping("/start/{publishId}")
     public Result<ExamPaperVo> startExam(@PathVariable Long publishId, HttpServletRequest request) {
@@ -63,7 +65,6 @@ public class StudentExamController {
 
     /**
      * 交卷
-     * POST /api/exam/submit
      */
     @PostMapping("/submit")
     public Result<Void> submitExam(@RequestBody SubmitExamRequest submitRequest, HttpServletRequest request) {
@@ -76,7 +77,6 @@ public class StudentExamController {
 
     /**
      * 获取考试结果详情 (通过 recordId)
-     * GET /api/exam/result/{recordId}
      */
     @GetMapping("/result/{recordId}")
     public Result<StudentExamResultVo> getExamResult(@PathVariable Long recordId, HttpServletRequest request) {
@@ -84,12 +84,19 @@ public class StudentExamController {
         Long userId = jwtUtils.getUserIdFromToken(token);
 
         StudentExamResultVo vo = recordService.getStudentExamResult(recordId, userId);
+        
+        // --- 新增逻辑: 校验是否允许查看详情 ---
+        Record record = recordService.getById(recordId);
+        if (record != null) {
+            handleAnalysisPermission(vo, record.getPublishId());
+        }
+        // ------------------------------------
+
         return Result.success(vo);
     }
 
     /**
      * 根据 publishId 获取最新的考试结果
-     * GET /api/exam/result/publish/{publishId}
      */
     @GetMapping("/result/publish/{publishId}")
     public Result<StudentExamResultVo> getLatestExamResult(@PathVariable Long publishId, HttpServletRequest request) {
@@ -102,7 +109,36 @@ public class StudentExamController {
         }
 
         StudentExamResultVo vo = recordService.getStudentExamResult(recordId, userId);
+        
+        // --- 新增逻辑: 校验是否允许查看详情 ---
+        handleAnalysisPermission(vo, publishId);
+        // ------------------------------------
+        
         return Result.success(vo);
+    }
+
+    /**
+     * 处理解析查看权限逻辑
+     */
+    private void handleAnalysisPermission(StudentExamResultVo vo, Long publishId) {
+        Publish publish = publishService.getById(publishId);
+        if (publish == null) return;
+
+        // 1. 设置考试截止时间
+        vo.setExamEndTime(publish.getEndTime().toString().replace("T", " "));
+
+        // 2. 判断逻辑: 当前时间 > 结束时间 OR 允许提前看
+        boolean isTimeUp = LocalDateTime.now().isAfter(publish.getEndTime());
+        boolean isAllowed = publish.getAllowEarlyAnalysis() != null && publish.getAllowEarlyAnalysis() == 1;
+        
+        if (isTimeUp || isAllowed) {
+            vo.setCanViewAnalysis(true);
+        } else {
+            // 不允许查看: 标记为 false，并清空所有题目数据
+            // 确保前端无法通过抓包获取题目内容
+            vo.setCanViewAnalysis(false);
+            vo.setQuestionList(null); // 或者 Collections.emptyList()
+        }
     }
 
     private String getToken(HttpServletRequest request) {

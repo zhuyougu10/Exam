@@ -116,7 +116,7 @@
             <el-option
                 v-for="item in paperOptions"
                 :key="item.id"
-                :label="item.title"
+                :label="item.title + ' (时长:' + item.duration + '分钟)'"
                 :value="item.id"
             />
           </el-select>
@@ -127,7 +127,6 @@
         </el-form-item>
 
         <el-form-item label="考试时间" prop="timeRange">
-          <!-- 使用 ElConfigProvider 局部配置中文 -->
           <el-config-provider :locale="zhCn">
             <el-date-picker
                 v-model="form.timeRange"
@@ -142,7 +141,6 @@
         </el-form-item>
 
         <el-form-item label="参考班级" prop="targetDeptIds">
-          <!-- 修改点：移除 check-strictly 实现级联选择，添加 node-key 修复回显 -->
           <el-tree-select
               v-model="form.targetDeptIds"
               :data="deptTree"
@@ -155,6 +153,18 @@
               node-key="id"
               class="w-full"
           />
+        </el-form-item>
+
+        <!-- 新增: 解析查看权限设置 -->
+        <el-form-item label="允许看详情">
+          <el-switch
+              v-model="form.allowEarlyAnalysis"
+              active-text="允许考前查看"
+              inactive-text="考后开放"
+              :active-value="1"
+              :inactive-value="0"
+          />
+          <div class="text-xs text-gray-400 mt-1">若关闭，学生提交后仅能看到分数，在考试截止时间前<span class="text-red-400 font-bold">无法查看任何题目和解析</span>。</div>
         </el-form-item>
 
         <el-row :gutter="20">
@@ -201,7 +211,7 @@ const publishList = ref([])
 const total = ref(0)
 const paperOptions = ref<any[]>([])
 const deptTree = ref<any[]>([])
-const deptMap = ref<Record<number, any>>({}) // 用于快速查找部门信息
+const deptMap = ref<Record<number, any>>({})
 const formRef = ref()
 
 const queryParams = reactive({
@@ -215,7 +225,8 @@ const form = reactive({
   timeRange: [] as string[],
   targetDeptIds: [] as number[],
   limitCount: 1,
-  password: ''
+  password: '',
+  allowEarlyAnalysis: 1 // 默认为1：允许
 })
 
 const rules = {
@@ -235,9 +246,7 @@ onMounted(() => {
 const checkRouteParams = () => {
   const { paperId, paperTitle } = route.query
   if (paperId) {
-    // 即使是从路由跳转过来，也执行一次 handleAdd 的初始化逻辑以填充时间
     handleAdd()
-    // 然后覆盖 ID 和 Title
     form.paperId = Number(paperId)
     form.title = paperTitle ? `${paperTitle} - 考试` : ''
   }
@@ -254,7 +263,6 @@ const fetchDepts = async () => {
   try {
     const res: any = await request.get('/admin/dept/tree')
     deptTree.value = res
-    // 构建部门 Map，方便后续过滤
     buildDeptMap(res)
   } catch (error) { console.error(error) }
 }
@@ -290,12 +298,9 @@ const handleSubmit = async () => {
   if (!formRef.value) return
   await formRef.value.validate(async (valid: boolean) => {
     if (valid) {
-      // 数据清洗：过滤掉非班级（category != 3）的 ID
-      // el-tree 在非严格模式下，选中父节点会将父节点 ID 也包含在 v-model 中
-      // 但后端只需要具体的班级 ID 才能正确关联学生
+      // 1. 校验班级选择
       const classIds = form.targetDeptIds.filter(id => {
         const node = deptMap.value[id]
-        // 假设 category: 1=学院, 2=系/专业, 3=班级
         return node && node.category === 3
       })
 
@@ -304,11 +309,25 @@ const handleSubmit = async () => {
         return
       }
 
+      // 2. 校验考试时长
+      // 获取当前选中试卷的 duration (单位:分钟)
+      const selectedPaper = paperOptions.value.find(p => p.id === form.paperId)
+      if (selectedPaper) {
+        const start = dayjs(form.timeRange[0])
+        const end = dayjs(form.timeRange[1])
+        const diffMinutes = end.diff(start, 'minute')
+
+        if (diffMinutes < selectedPaper.duration) {
+          ElMessage.error(`发布时间范围 (${diffMinutes}分钟) 不能小于试卷规定的考试时长 (${selectedPaper.duration}分钟)`)
+          return
+        }
+      }
+
       submitLoading.value = true
       try {
         const payload = {
           ...form,
-          targetDeptIds: classIds, // 使用过滤后的 ID 列表
+          targetDeptIds: classIds,
           startTime: form.timeRange[0],
           endTime: form.timeRange[1]
         }
@@ -326,19 +345,17 @@ const handleSubmit = async () => {
 }
 
 const handleAdd = () => {
-  // 获取当前时间，并格式化
   const now = dayjs()
-  // 默认考试时长 2小时
   const endTime = now.add(2, 'hour')
 
   Object.assign(form, {
     paperId: undefined,
     title: '',
-    // 自动填充时间范围: [当前时间, 当前时间+2小时]
     timeRange: [now.format('YYYY-MM-DD HH:mm:ss'), endTime.format('YYYY-MM-DD HH:mm:ss')],
     targetDeptIds: [],
     limitCount: 1,
-    password: ''
+    password: '',
+    allowEarlyAnalysis: 1 // 默认开启
   })
   dialogVisible.value = true
 }

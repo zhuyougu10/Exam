@@ -80,6 +80,13 @@ public class Publish implements Serializable {
     private Byte status;
 
     /**
+     * 是否允许考前看解析：0-否，1-是
+     * 新增字段
+     */
+    @TableField("allow_early_analysis")
+    private Byte allowEarlyAnalysis;
+
+    /**
      * 创建时间
      */
     @TableField("create_time")

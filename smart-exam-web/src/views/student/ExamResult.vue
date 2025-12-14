@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 // 导入所需图标
-import { Trophy, ArrowLeft, Share, Warning, Check, Close } from '@element-plus/icons-vue'
+import { Trophy, ArrowLeft, Share, Warning, Check, Close, Lock } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 
 const route = useRoute()
@@ -19,11 +19,15 @@ const resultData = ref({
   startTime: '',
   duration: '',
   radarData: [] as any[],
-  questions: [] as any[]
+  questions: [] as any[],
+  // 新增字段
+  canViewAnalysis: true,
+  examEndTime: ''
 })
 
 // 计算错题 (根据 studentScore < score 判断)
 const wrongQuestions = computed(() => {
+  if (!resultData.value.questions) return []
   return resultData.value.questions.filter(q => q.studentScore < q.score)
 })
 
@@ -32,7 +36,7 @@ let myChart: echarts.ECharts | null = null;
 
 const initChart = () => {
   if (!radarChartRef.value) return
-  if (resultData.value.radarData.length === 0) return // 无数据不渲染
+  if (!resultData.value.radarData || resultData.value.radarData.length === 0) return // 无数据不渲染
 
   if (myChart != null) {
     myChart.dispose();
@@ -110,12 +114,9 @@ const getOptionStatus = (question: any, opt: any) => {
   let isCorrect = false
 
   if (question.type === 3) {
-    // 判断题：比对内容 (因为答案已格式化为 '正确'/'错误')
-    // 假设选项内容也是 '正确' 或 '错误'
     isSelected = sAns === opt.content
     isCorrect = cAns === opt.content
   } else {
-    // 选择题：比对 Key (A, B, C...)
     isSelected = sAns.includes(opt.key)
     isCorrect = cAns.includes(opt.key)
   }
@@ -125,14 +126,18 @@ const getOptionStatus = (question: any, opt: any) => {
 
 // 获取选项样式类名
 const getOptionClass = (question: any, opt: any) => {
-  const { isSelected, isCorrect } = getOptionStatus(question, opt)
+  // 如果不允许看解析，则不显示正确/错误的颜色，只显示选中状态
+  if (!resultData.value.canViewAnalysis) {
+    const sAns = question.studentAnswer || ''
+    let isSelected = false
+    if (question.type === 3) isSelected = sAns === opt.content
+    else isSelected = sAns.includes(opt.key)
+    return isSelected ? 'option-selected-neutral' : 'option-default'
+  }
 
-  if (isCorrect) {
-    return 'option-correct'
-  }
-  if (isSelected && !isCorrect) {
-    return 'option-wrong'
-  }
+  const { isSelected, isCorrect } = getOptionStatus(question, opt)
+  if (isCorrect) return 'option-correct'
+  if (isSelected && !isCorrect) return 'option-wrong'
   return 'option-default'
 }
 
@@ -140,7 +145,6 @@ const getOptionClass = (question: any, opt: any) => {
 const parseOptions = (optionsStr: string) => {
   try {
     const opts = JSON.parse(optionsStr)
-    // 假设后端存的是 ["A选项", "B选项"] 这样的数组，需要转为 [{key:'A', content:'...'}, ...]
     if (Array.isArray(opts)) {
       return opts.map((content, index) => ({
         key: String.fromCharCode(65 + index),
@@ -170,7 +174,6 @@ const fetchExamResult = async () => {
       res = await request.get(`/exam/result/publish/${publishId}`)
     }
 
-    // 数据映射：将后端 VO 映射到前端 resultData 结构
     resultData.value = {
       paperTitle: res.title,
       totalScore: res.userScore,
@@ -179,24 +182,29 @@ const fetchExamResult = async () => {
       startTime: res.startTime,
       duration: res.duration,
       radarData: res.radarData || [],
-      questions: res.questionList.map((q: any) => ({
+      // 填充新字段
+      canViewAnalysis: res.canViewAnalysis !== false, // 默认为 true 兼容旧数据
+      examEndTime: res.examEndTime,
+      questions: res.questionList ? res.questionList.map((q: any) => ({
         id: q.id,
         questionNo: q.questionNo,
         type: q.type,
         content: q.content,
         options: parseOptions(q.options),
-        // 在此处进行答案格式化
         studentAnswer: formatAnswer(q.studentAnswer, q.type),
-        correctAnswer: formatAnswer(q.correctAnswer, q.type),
+        correctAnswer: formatAnswer(q.correctAnswer, q.type), // 可能为null
         score: q.maxScore,
         studentScore: q.score,
-        analysis: q.analysis
-      }))
+        analysis: q.analysis // 可能为null
+      })) : []
     }
 
-    nextTick(() => {
-      initChart()
-    })
+    // 只有允许查看时才渲染图表
+    if (resultData.value.canViewAnalysis) {
+      nextTick(() => {
+        initChart()
+      })
+    }
 
   } catch (error) {
     console.error('获取成绩失败', error)
@@ -245,16 +253,15 @@ onMounted(() => {
           </div>
         </div>
       </div>
-
-      <!-- Decorative circles -->
       <div class="circle circle-1"></div>
       <div class="circle circle-2"></div>
     </div>
 
     <!-- Main Content -->
     <div class="main-container">
-      <div class="grid-layout">
 
+      <!-- 场景1: 允许查看解析 (正常显示) -->
+      <div v-if="resultData.canViewAnalysis" class="grid-layout">
         <!-- Left Column: Chart & Stats -->
         <div class="left-column">
           <!-- Radar Chart Card -->
@@ -284,9 +291,6 @@ onMounted(() => {
                     class="progress-bar"
                 />
               </div>
-            </div>
-            <div class="share-btn-wrapper">
-              <el-button class="full-width-btn" :icon="Share">分享成绩单</el-button>
             </div>
           </div>
         </div>
@@ -330,7 +334,6 @@ onMounted(() => {
                     <span class="opt-key">{{ opt.key }}.</span>
                     <span class="opt-content">{{ opt.content }}</span>
 
-                    <!-- Icons: 使用 helper 函数统一逻辑 -->
                     <el-icon v-if="getOptionStatus(question, opt).isCorrect" class="status-icon green"><Check /></el-icon>
                     <el-icon v-else-if="getOptionStatus(question, opt).isSelected" class="status-icon red"><Close /></el-icon>
                   </div>
@@ -361,10 +364,29 @@ onMounted(() => {
               <h3 class="empty-title">全对啦！太棒了！</h3>
               <p class="empty-desc">本次考试没有错题，继续保持哦 ~</p>
             </div>
-
           </div>
         </div>
       </div>
+
+      <!-- 场景2: 禁止查看详情 (限制页面) -->
+      <div v-else class="restricted-view">
+        <div class="card restricted-card">
+          <div class="restricted-content">
+            <div class="icon-wrapper">
+              <el-icon size="64" color="#909399"><Lock /></el-icon>
+            </div>
+            <h2 class="text-xl font-bold text-gray-800 mt-4">试卷详情暂未开放</h2>
+            <p class="text-gray-500 mt-2">
+              管理员设置了考试结束前不允许查看试卷题目和解析。<br>
+              请在 <strong>{{ resultData.examEndTime }}</strong> 后再来查看详细内容。
+            </p>
+            <div class="mt-8">
+              <el-button type="primary" plain @click="goBack">返回考试列表</el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
@@ -724,6 +746,13 @@ onMounted(() => {
   font-weight: 500;
 }
 
+.option-selected-neutral {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
 .option-default {
   background-color: white;
   color: #4b5563;
@@ -792,6 +821,31 @@ onMounted(() => {
 .empty-desc {
   color: #6b7280;
   margin-top: 8px;
+}
+
+/* Restricted View */
+.restricted-view {
+  display: flex;
+  justify-content: center;
+  margin-top: 40px;
+}
+
+.restricted-card {
+  width: 100%;
+  max-width: 600px;
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.icon-wrapper {
+  background-color: #f3f4f6;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
 }
 
 /* Deep override for Element Plus progress bar */
