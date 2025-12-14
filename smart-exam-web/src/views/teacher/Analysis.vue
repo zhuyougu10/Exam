@@ -1,74 +1,138 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
+import request from '@/utils/request'
 import { Search, Trophy, DataLine, Timer } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
-// 模拟考试场次列表
-const examOptions = [
-  { id: 1, label: '2024-2025第一学期 Java高级程序设计期末考' },
-  { id: 2, label: '2024-2025第一学期 数据结构期中测验' },
-  { id: 3, label: '2023级 计算机网络第一次月考' }
-]
-const currentExamId = ref(1)
+// 状态
+const loading = ref(false)
+const examOptions = ref<any[]>([])
+const currentExamId = ref<number | undefined>(undefined)
 
-// 模拟核心指标数据
 const stats = ref({
-  avgScore: 78.5,
-  maxScore: 98,
-  minScore: 45,
-  passRate: 85.2,
-  attendeeCount: 120
+  avgScore: 0,
+  maxScore: 0,
+  minScore: 0,
+  passRate: 0,
+  attendeeCount: 0
 })
 
-// 模拟错题TOP10数据
-const wrongQuestionList = ref([
-  { id: 101, content: 'Java中关于Volatile关键字的描述...', type: '单选题', errorRate: 68, knowledge: '多线程' },
-  { id: 102, content: '以下属于TCP三次握手过程的是...', type: '多选题', errorRate: 62, knowledge: '网络协议' },
-  { id: 103, content: 'Spring Bean的生命周期包含哪些阶段...', type: '简答题', errorRate: 55, knowledge: 'Spring框架' },
-  { id: 104, content: '二叉树的后序遍历序列是...', type: '单选题', errorRate: 48, knowledge: '数据结构' },
-  { id: 105, content: 'MySQL索引失效的场景...', type: '多选题', errorRate: 45, knowledge: '数据库' }
-])
+const wrongQuestionList = ref<any[]>([])
 
 const barChartRef = ref<HTMLElement | null>(null)
 const radarChartRef = ref<HTMLElement | null>(null)
 let barChart: echarts.ECharts | null = null
 let radarChart: echarts.ECharts | null = null
 
-// 初始化图表
-const initCharts = () => {
+// 初始化加载
+onMounted(() => {
+  fetchExamList()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  barChart?.dispose()
+  radarChart?.dispose()
+})
+
+const handleResize = () => {
+  barChart?.resize()
+  radarChart?.resize()
+}
+
+// 1. 获取考试列表
+const fetchExamList = async () => {
+  try {
+    const res: any = await request.get('/analysis/exam/list')
+    if (res && res.length > 0) {
+      examOptions.value = res.map((item: any) => ({
+        id: item.id,
+        label: item.title + (item.status === 2 ? ' (已结束)' : ' (进行中)')
+      }))
+      // 默认选中第一个
+      currentExamId.value = res[0].id
+      handleExamChange()
+    } else {
+      ElMessage.info('暂无考试记录')
+    }
+  } catch (error) {
+    console.error('Fetch exams failed', error)
+  }
+}
+
+// 2. 获取具体分析数据
+const handleExamChange = async () => {
+  if (!currentExamId.value) return
+  loading.value = true
+  try {
+    const res: any = await request.get(`/analysis/exam/${currentExamId.value}`)
+    if (res) {
+      // 核心指标
+      stats.value = {
+        avgScore: res.avgScore || 0,
+        maxScore: res.maxScore || 0,
+        minScore: res.minScore || 0,
+        passRate: res.passRate || 0,
+        attendeeCount: res.attendeeCount || 0
+      }
+
+      // 错题榜
+      wrongQuestionList.value = res.wrongTop10 || []
+
+      // 更新图表
+      nextTick(() => {
+        updateCharts(res)
+      })
+    }
+  } catch (error) {
+    ElMessage.error('获取分析数据失败')
+    console.error(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 初始化/更新图表
+const updateCharts = (data: any) => {
+  // 柱状图：分数分布
   if (barChartRef.value) {
-    barChart = echarts.init(barChartRef.value)
+    if (!barChart) barChart = echarts.init(barChartRef.value)
     barChart.setOption({
       title: { text: '成绩分数段分布', left: 'center', textStyle: { fontSize: 16 } },
       tooltip: { trigger: 'axis' },
       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'category', data: ['0-60', '60-70', '70-80', '80-90', '90-100'] },
+      xAxis: { type: 'category', data: data.scoreRanges || [] },
       yAxis: { type: 'value' },
       series: [
         {
-          data: [5, 15, 40, 45, 15],
+          data: data.scoreCounts || [],
           type: 'bar',
           itemStyle: { color: '#409eff', borderRadius: [4, 4, 0, 0] },
-          barWidth: '40%'
+          barWidth: '40%',
+          label: { show: true, position: 'top' }
         }
       ]
     })
   }
 
+  // 雷达图：知识点
   if (radarChartRef.value) {
-    radarChart = echarts.init(radarChartRef.value)
+    if (!radarChart) radarChart = echarts.init(radarChartRef.value)
+
+    const indicators = (data.knowledgeRadar || []).map((item: any) => ({
+      name: item.name,
+      max: item.max || 100
+    }))
+
+    const radarValues = (data.knowledgeRadar || []).map((item: any) => item.value)
+
     radarChart.setOption({
-      title: { text: '班级知识点掌握热力', left: 'center', textStyle: { fontSize: 16 } },
+      title: { text: '知识点掌握热力图', left: 'center', textStyle: { fontSize: 16 } },
       tooltip: {},
       radar: {
-        indicator: [
-          { name: '多线程', max: 100 },
-          { name: '集合', max: 100 },
-          { name: 'IO流', max: 100 },
-          { name: '网络', max: 100 },
-          { name: 'JVM', max: 100 },
-          { name: '反射', max: 100 }
-        ],
+        indicator: indicators.length > 0 ? indicators : [{ name: '暂无数据', max: 100 }],
         radius: '65%'
       },
       series: [
@@ -79,7 +143,7 @@ const initCharts = () => {
           itemStyle: { color: '#67c23a' },
           data: [
             {
-              value: [65, 85, 70, 90, 55, 75],
+              value: radarValues.length > 0 ? radarValues : [0],
               name: '班级平均'
             }
           ]
@@ -88,31 +152,10 @@ const initCharts = () => {
     })
   }
 }
-
-// 监听窗口大小变化
-const handleResize = () => {
-  barChart?.resize()
-  radarChart?.resize()
-}
-
-// 模拟切换场次加载数据
-const handleExamChange = () => {
-  // 这里可以调用后端 API
-  console.log('Switch to exam:', currentExamId.value)
-  // 模拟数据变化动画
-  initCharts()
-}
-
-onMounted(() => {
-  nextTick(() => {
-    initCharts()
-    window.addEventListener('resize', handleResize)
-  })
-})
 </script>
 
 <template>
-  <div class="analysis-container">
+  <div class="analysis-container" v-loading="loading">
     <!-- 顶部筛选 -->
     <div class="filter-header card">
       <div class="filter-item">
@@ -131,7 +174,7 @@ onMounted(() => {
           />
         </el-select>
       </div>
-      <el-button type="primary" :icon="Search">刷新分析</el-button>
+      <el-button type="primary" :icon="Search" @click="handleExamChange">刷新分析</el-button>
     </div>
 
     <!-- 核心指标卡片 -->
@@ -141,8 +184,8 @@ onMounted(() => {
           <el-icon><DataLine /></el-icon>
         </div>
         <div class="stat-info">
-          <div class="stat-label">班级平均分</div>
-          <div class="stat-value">{{ stats.avgScore }}</div>
+          <div class="stat-label">平均分 / 参考人数</div>
+          <div class="stat-value">{{ stats.avgScore }} <span style="font-size:14px">/ {{ stats.attendeeCount }}人</span></div>
         </div>
       </div>
       <div class="stat-card card purple-gradient">
@@ -150,8 +193,8 @@ onMounted(() => {
           <el-icon><Trophy /></el-icon>
         </div>
         <div class="stat-info">
-          <div class="stat-label">最高分</div>
-          <div class="stat-value">{{ stats.maxScore }}</div>
+          <div class="stat-label">最高分 / 最低分</div>
+          <div class="stat-value">{{ stats.maxScore }} <span style="font-size:14px">/ {{ stats.minScore }}</span></div>
         </div>
       </div>
       <div class="stat-card card green-gradient">
@@ -192,9 +235,7 @@ onMounted(() => {
         <el-table-column prop="content" label="题目内容" min-width="300" show-overflow-tooltip />
         <el-table-column prop="type" label="题型" width="100" align="center">
           <template #default="scope">
-            <el-tag size="small" :type="scope.row.type === '单选题' ? 'primary' : 'warning'">
-              {{ scope.row.type }}
-            </el-tag>
+            <el-tag size="small">{{ scope.row.type }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="knowledge" label="关联知识点" width="150" align="center" />
@@ -208,11 +249,6 @@ onMounted(() => {
                 :stroke-width="6"
                 style="margin-top: 4px"
             />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120" align="center">
-          <template #default>
-            <el-button link type="primary" size="small">查看详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -311,7 +347,7 @@ onMounted(() => {
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: bold;
 }
 
@@ -323,7 +359,7 @@ onMounted(() => {
 
 .chart-col {
   flex: 1;
-  min-width: 0; /* 防止Flex子项溢出 */
+  min-width: 0;
 }
 
 .chart-container {

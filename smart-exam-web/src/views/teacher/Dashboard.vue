@@ -1,23 +1,48 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/store/user'
+import request from '@/utils/request'
+import dayjs from 'dayjs'
 import {
   EditPen,
   DocumentAdd,
   DataAnalysis,
-  Files,
-  UserFilled,
   Timer
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const userStore = useUserStore()
 
-// 模拟待办事项
-const pendingTasks = ref([
-  { id: 1, title: '《Java期中考》有 5 份主观题待批改', time: '10分钟前', urgent: true },
-  { id: 2, title: '《网络协议》考试发布成功，请确认', time: '1小时前', urgent: false },
-  { id: 3, title: '题库导入任务完成，成功导入 150 题', time: '昨天', urgent: false }
-])
+// 状态定义
+const loading = ref(false)
+const currentDate = dayjs().format('YYYY年MM月DD日 dddd')
+const stats = ref({
+  paperCount: 0,
+  questionCount: 0,
+  examineeCount: 0
+})
+const pendingTasks = ref<any[]>([])
+
+// 获取仪表盘数据
+const fetchDashboardData = async () => {
+  loading.value = true
+  try {
+    const res: any = await request.get('/teacher/dashboard/stats')
+    if (res) {
+      stats.value = {
+        paperCount: res.paperCount || 0,
+        questionCount: res.questionCount || 0,
+        examineeCount: res.examineeCount || 0
+      }
+      pendingTasks.value = res.todoList || []
+    }
+  } catch (error) {
+    console.error('Fetch dashboard failed', error)
+  } finally {
+    loading.value = false
+  }
+}
 
 // 快捷操作跳转
 const handleQuickAction = (action: string) => {
@@ -36,18 +61,21 @@ const handleQuickAction = (action: string) => {
       break
   }
 }
+
+onMounted(() => {
+  fetchDashboardData()
+})
 </script>
 
 <template>
-  <div class="dashboard-container">
+  <div class="dashboard-container" v-loading="loading">
     <!-- 欢迎 Banner -->
     <div class="welcome-banner">
       <div class="welcome-content">
-        <h2>早安，张老师！</h2>
-        <p>今天是 2025年12月14日，新的一天，祝您工作愉快。</p>
+        <h2>早安，{{ userStore.userInfo?.realName || '老师' }}！</h2>
+        <p>今天是 {{ currentDate }}，新的一天，祝您工作愉快。</p>
       </div>
       <div class="welcome-img">
-        <!-- 简单的装饰图形，可用图片替代 -->
         <div class="decoration-circle"></div>
       </div>
     </div>
@@ -92,17 +120,17 @@ const handleQuickAction = (action: string) => {
           <div class="data-overview">
             <div class="data-item">
               <div class="label">试卷总数</div>
-              <div class="value">24 <span class="unit">套</span></div>
+              <div class="value">{{ stats.paperCount }} <span class="unit">套</span></div>
             </div>
             <div class="divider"></div>
             <div class="data-item">
               <div class="label">题库题目</div>
-              <div class="value">1,205 <span class="unit">道</span></div>
+              <div class="value">{{ stats.questionCount }} <span class="unit">道</span></div>
             </div>
             <div class="divider"></div>
             <div class="data-item">
               <div class="label">累计参考人次</div>
-              <div class="value">3,502 <span class="unit">人</span></div>
+              <div class="value">{{ stats.examineeCount }} <span class="unit">人</span></div>
             </div>
           </div>
         </div>
@@ -116,6 +144,7 @@ const handleQuickAction = (action: string) => {
             <el-button link type="primary">查看全部</el-button>
           </div>
           <div class="task-list">
+            <div v-if="pendingTasks.length === 0" class="empty-task">暂无待办事项</div>
             <div
                 v-for="task in pendingTasks"
                 :key="task.id"
@@ -341,6 +370,13 @@ const handleQuickAction = (action: string) => {
 .task-time {
   font-size: 12px;
   color: #909399;
+}
+
+.empty-task {
+  color: #909399;
+  text-align: center;
+  padding: 20px 0;
+  font-size: 14px;
 }
 
 @media (max-width: 768px) {

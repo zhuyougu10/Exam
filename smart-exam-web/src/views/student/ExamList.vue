@@ -178,9 +178,9 @@ const handleViewResult = (exam: any) => {
   // 临时逻辑：如果考试已结束，尝试查找结果。
   // 由于数据缺失，暂跳转到错题本或列表页提示
   // 为了闭环，这里假设 ExamResult 可以接受 publishId 并查询最新记录
-  // router.push({ path: '/student/exam-result', query: { publishId: exam.id } })
+  router.push({ path: '/student/exam-result', query: { publishId: exam.id } })
 
-  ElMessage.info('查看历史试卷功能正在升级中，请前往“仪表盘”查看统计或“错题本”回顾。')
+  // ElMessage.info('查看历史试卷功能正在升级中，请前往“仪表盘”查看统计或“错题本”回顾。')
 }
 
 // ------ 样式与格式化 ------
