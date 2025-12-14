@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import request from '@/utils/request'
 // 导入所需图标
 import { Trophy, ArrowLeft, Share, Warning, Check, Close } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
@@ -8,104 +10,35 @@ import * as echarts from 'echarts'
 const route = useRoute()
 const router = useRouter()
 
-// 模拟考试结果数据
+// 响应式数据
 const resultData = ref({
-  paperTitle: 'Java 高级程序设计期末考试',
-  totalScore: 88,
+  paperTitle: '',
+  totalScore: 0,
   paperTotalScore: 100,
-  beatRate: 85,
-  startTime: '2025-06-15 14:00:00',
-  duration: '85分钟',
-  radarData: [
-    { name: '多线程', max: 100, value: 90 },
-    { name: '集合框架', max: 100, value: 80 },
-    { name: 'JVM', max: 100, value: 60 },
-    { name: 'IO流', max: 100, value: 85 },
-    { name: '反射', max: 100, value: 70 },
-    { name: '网络编程', max: 100, value: 95 }
-  ],
-  questions: [
-    {
-      id: 101,
-      questionNo: 1, // 原始题号
-      type: 1,
-      content: '下面哪个类不是实现了 List 接口?',
-      options: [
-        { key: 'A', content: 'ArrayList' },
-        { key: 'B', content: 'LinkedList' },
-        { key: 'C', content: 'HashSet' },
-        { key: 'D', content: 'Vector' }
-      ],
-      studentAnswer: 'D',
-      correctAnswer: 'C',
-      score: 5,
-      studentScore: 0,
-      analysis: 'HashSet 实现了 Set 接口，而不是 List 接口。'
-    },
-    {
-      id: 102,
-      questionNo: 2,
-      type: 1,
-      content: 'Java 中线程安全的 Map 是?',
-      options: [
-        { key: 'A', content: 'HashMap' },
-        { key: 'B', content: 'ConcurrentHashMap' },
-        { key: 'C', content: 'TreeMap' },
-        { key: 'D', content: 'LinkedHashMap' }
-      ],
-      studentAnswer: 'B',
-      correctAnswer: 'B',
-      score: 5,
-      studentScore: 5,
-      analysis: 'ConcurrentHashMap 是线程安全的。'
-    },
-    {
-      id: 103,
-      questionNo: 3,
-      type: 2,
-      content: '以下哪些是 Java 的基本数据类型?',
-      options: [
-        { key: 'A', content: 'int' },
-        { key: 'B', content: 'String' },
-        { key: 'C', content: 'boolean' },
-        { key: 'D', content: 'Double' }
-      ],
-      studentAnswer: 'A,C',
-      correctAnswer: 'A,C',
-      score: 10,
-      studentScore: 10,
-      analysis: 'String 和 Double 是类，不是基本数据类型。'
-    },
-    {
-      id: 104,
-      questionNo: 4,
-      type: 1,
-      content: '关于 volatile 关键字，下列描述错误的是？',
-      options: [
-        { key: 'A', content: '保证可见性' },
-        { key: 'B', content: '保证原子性' },
-        { key: 'C', content: '禁止指令重排' },
-        { key: 'D', content: '比 synchronized 轻量' }
-      ],
-      studentAnswer: 'C',
-      correctAnswer: 'B',
-      score: 5,
-      studentScore: 0,
-      analysis: 'volatile 只能保证可见性和有序性，不能保证原子性。'
-    }
-  ]
+  beatRate: 0,
+  startTime: '',
+  duration: '',
+  radarData: [] as any[],
+  questions: [] as any[]
 })
 
+// 计算错题 (根据 studentScore < score 判断)
 const wrongQuestions = computed(() => {
   return resultData.value.questions.filter(q => q.studentScore < q.score)
 })
 
 const radarChartRef = ref<HTMLElement | null>(null)
+let myChart: echarts.ECharts | null = null;
 
 const initChart = () => {
   if (!radarChartRef.value) return
+  if (resultData.value.radarData.length === 0) return // 无数据不渲染
 
-  const myChart = echarts.init(radarChartRef.value)
+  if (myChart != null) {
+    myChart.dispose();
+  }
+  myChart = echarts.init(radarChartRef.value)
+
   const option = {
     radar: {
       indicator: resultData.value.radarData.map(item => ({ name: item.name, max: item.max })),
@@ -139,13 +72,60 @@ const initChart = () => {
   }
   myChart.setOption(option)
 
-  window.addEventListener('resize', () => myChart.resize())
+  window.addEventListener('resize', () => myChart?.resize())
+}
+
+// 格式化答案显示 (核心修改)
+const formatAnswer = (answer: string | null, type: number) => {
+  if (answer === null || answer === undefined || answer === '') return '未作答'
+
+  // 清理可能存在的数组符号
+  const clean = String(answer).replace(/[\[\]"]/g, '')
+
+  if (type === 1) { // 单选: 0->A
+    const val = parseInt(clean)
+    return isNaN(val) ? answer : String.fromCharCode(65 + val)
+  }
+  if (type === 2) { // 多选: 0,1 -> A,B
+    const parts = clean.split(',')
+    return parts.map(p => {
+      const val = parseInt(p.trim())
+      return isNaN(val) ? p : String.fromCharCode(65 + val)
+    }).join(',')
+  }
+  if (type === 3) { // 判断: 0->错误, 1->正确
+    if (clean === '0') return '错误'
+    if (clean === '1') return '正确'
+    return clean
+  }
+  return answer
+}
+
+// 获取选项状态（是否选中、是否正确）
+const getOptionStatus = (question: any, opt: any) => {
+  const sAns = question.studentAnswer || ''
+  const cAns = question.correctAnswer || ''
+
+  let isSelected = false
+  let isCorrect = false
+
+  if (question.type === 3) {
+    // 判断题：比对内容 (因为答案已格式化为 '正确'/'错误')
+    // 假设选项内容也是 '正确' 或 '错误'
+    isSelected = sAns === opt.content
+    isCorrect = cAns === opt.content
+  } else {
+    // 选择题：比对 Key (A, B, C...)
+    isSelected = sAns.includes(opt.key)
+    isCorrect = cAns.includes(opt.key)
+  }
+
+  return { isSelected, isCorrect }
 }
 
 // 获取选项样式类名
-const getOptionClass = (question: any, optionKey: string) => {
-  const isSelected = question.studentAnswer.includes(optionKey)
-  const isCorrect = question.correctAnswer.includes(optionKey)
+const getOptionClass = (question: any, opt: any) => {
+  const { isSelected, isCorrect } = getOptionStatus(question, opt)
 
   if (isCorrect) {
     return 'option-correct'
@@ -156,14 +136,79 @@ const getOptionClass = (question: any, optionKey: string) => {
   return 'option-default'
 }
 
+// 解析后端选项 JSON 字符串
+const parseOptions = (optionsStr: string) => {
+  try {
+    const opts = JSON.parse(optionsStr)
+    // 假设后端存的是 ["A选项", "B选项"] 这样的数组，需要转为 [{key:'A', content:'...'}, ...]
+    if (Array.isArray(opts)) {
+      return opts.map((content, index) => ({
+        key: String.fromCharCode(65 + index),
+        content: content
+      }))
+    }
+    return opts
+  } catch (e) {
+    return []
+  }
+}
+
+const fetchExamResult = async () => {
+  const recordId = route.params.id || route.query.id || route.query.recordId
+  const publishId = route.query.publishId
+
+  if (!recordId && !publishId) {
+    ElMessage.error('参数错误：缺少考试记录ID或发布ID')
+    return
+  }
+
+  try {
+    let res: any
+    if (recordId) {
+      res = await request.get(`/exam/result/${recordId}`)
+    } else {
+      res = await request.get(`/exam/result/publish/${publishId}`)
+    }
+
+    // 数据映射：将后端 VO 映射到前端 resultData 结构
+    resultData.value = {
+      paperTitle: res.title,
+      totalScore: res.userScore,
+      paperTotalScore: res.totalScore,
+      beatRate: res.beatRate || 0,
+      startTime: res.startTime,
+      duration: res.duration,
+      radarData: res.radarData || [],
+      questions: res.questionList.map((q: any) => ({
+        id: q.id,
+        questionNo: q.questionNo,
+        type: q.type,
+        content: q.content,
+        options: parseOptions(q.options),
+        // 在此处进行答案格式化
+        studentAnswer: formatAnswer(q.studentAnswer, q.type),
+        correctAnswer: formatAnswer(q.correctAnswer, q.type),
+        score: q.maxScore,
+        studentScore: q.score,
+        analysis: q.analysis
+      }))
+    }
+
+    nextTick(() => {
+      initChart()
+    })
+
+  } catch (error) {
+    console.error('获取成绩失败', error)
+  }
+}
+
 const goBack = () => {
   router.push('/student/exam-list')
 }
 
 onMounted(() => {
-  nextTick(() => {
-    initChart()
-  })
+  fetchExamResult()
 })
 </script>
 
@@ -201,7 +246,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Decorative circles (纯CSS实现) -->
+      <!-- Decorative circles -->
       <div class="circle circle-1"></div>
       <div class="circle circle-2"></div>
     </div>
@@ -213,7 +258,7 @@ onMounted(() => {
         <!-- Left Column: Chart & Stats -->
         <div class="left-column">
           <!-- Radar Chart Card -->
-          <div class="card">
+          <div class="card" v-if="resultData.radarData && resultData.radarData.length > 0">
             <h3 class="card-title blue-border">能力雷达</h3>
             <div ref="radarChartRef" class="chart-container"></div>
             <div class="chart-hint">基于本次考试知识点得分率生成</div>
@@ -234,7 +279,7 @@ onMounted(() => {
               <div class="stat-row">
                 <span class="stat-label">正确率</span>
                 <el-progress
-                    :percentage="Math.round(((resultData.questions.length - wrongQuestions.length) / resultData.questions.length) * 100)"
+                    :percentage="resultData.questions.length > 0 ? Math.round(((resultData.questions.length - wrongQuestions.length) / resultData.questions.length) * 100) : 0"
                     status="success"
                     class="progress-bar"
                 />
@@ -263,7 +308,7 @@ onMounted(() => {
                 <!-- Question Header -->
                 <div class="question-title-row">
                   <span class="q-type-badge">
-                    {{ question.type === 1 ? '单选' : question.type === 2 ? '多选' : '判断' }}
+                    {{ question.type === 1 ? '单选' : question.type === 2 ? '多选' : question.type === 3 ? '判断' : '简答' }}
                   </span>
                   <div class="q-content">
                     {{ question.questionNo }}. {{ question.content }}
@@ -275,19 +320,19 @@ onMounted(() => {
                 </div>
 
                 <!-- Options -->
-                <div class="options-list">
+                <div class="options-list" v-if="question.type <= 3">
                   <div
                       v-for="opt in question.options"
                       :key="opt.key"
                       class="option-item"
-                      :class="getOptionClass(question, opt.key)"
+                      :class="getOptionClass(question, opt)"
                   >
                     <span class="opt-key">{{ opt.key }}.</span>
                     <span class="opt-content">{{ opt.content }}</span>
 
-                    <!-- Icons -->
-                    <el-icon v-if="question.correctAnswer.includes(opt.key)" class="status-icon green"><Check /></el-icon>
-                    <el-icon v-else-if="question.studentAnswer.includes(opt.key) && !question.correctAnswer.includes(opt.key)" class="status-icon red"><Close /></el-icon>
+                    <!-- Icons: 使用 helper 函数统一逻辑 -->
+                    <el-icon v-if="getOptionStatus(question, opt).isCorrect" class="status-icon green"><Check /></el-icon>
+                    <el-icon v-else-if="getOptionStatus(question, opt).isSelected" class="status-icon red"><Close /></el-icon>
                   </div>
                 </div>
 
@@ -304,7 +349,7 @@ onMounted(() => {
                     <span class="val green">{{ question.correctAnswer }}</span>
                     <span class="divider">|</span>
                     <span class="label">您的答案：</span>
-                    <span class="val red strike">{{ question.studentAnswer }}</span>
+                    <span class="val red strike">{{ question.studentAnswer || '未作答' }}</span>
                   </div>
                 </div>
               </div>

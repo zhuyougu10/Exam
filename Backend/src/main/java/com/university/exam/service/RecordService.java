@@ -3,6 +3,7 @@ package com.university.exam.service;
 import com.university.exam.common.dto.student.DashboardStatsVo;
 import com.university.exam.common.dto.student.ExamPaperVo;
 import com.university.exam.common.dto.student.SubmitExamRequest;
+import com.university.exam.common.vo.StudentExamResultVo;
 import com.university.exam.entity.Record;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -40,4 +41,21 @@ public interface RecordService extends IService<Record> {
      * @return 统计数据
      */
     DashboardStatsVo getStudentStats(Long userId);
+
+    /**
+     * 获取学生考试结果详情
+     *
+     * @param recordId 记录ID
+     * @param userId   用户ID (用于鉴权)
+     * @return 结果VO
+     */
+    StudentExamResultVo getStudentExamResult(Long recordId, Long userId);
+
+    /**
+     * 获取用户在某场考试的最新记录ID
+     * * @param userId    用户ID
+     * @param publishId 考试发布ID
+     * @return 记录ID
+     */
+    Long getLatestRecordId(Long userId, Long publishId);
 }

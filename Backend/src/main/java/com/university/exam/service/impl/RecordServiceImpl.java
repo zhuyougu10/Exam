@@ -7,6 +7,7 @@ import com.university.exam.common.dto.student.DashboardStatsVo;
 import com.university.exam.common.dto.student.ExamPaperVo;
 import com.university.exam.common.dto.student.SubmitExamRequest;
 import com.university.exam.common.exception.BizException;
+import com.university.exam.common.vo.StudentExamResultVo;
 import com.university.exam.entity.*;
 import com.university.exam.entity.Record;
 import com.university.exam.mapper.RecordMapper;
@@ -22,7 +23,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -214,11 +217,20 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
                     detail.setIsCorrect((byte) (isCorrect ? 1 : 0));
                     detail.setIsMarked((byte) 1); // 标记为已批改
                 } else {
-                    // 主观题：暂设计为0分，等待AI或人工
-                    detail.setScore(BigDecimal.ZERO);
-                    detail.setIsMarked((byte) 0);
-                    detail.setIsCorrect((byte) 0);
-                    hasSubjective = true;
+                    // 主观题处理逻辑修改
+                    if (StrUtil.isBlank(item.getUserAnswer())) {
+                        // 情况A：未作答 -> 直接0分，标记为已批改，不触发AI
+                        detail.setScore(BigDecimal.ZERO);
+                        detail.setIsMarked((byte) 1);
+                        detail.setIsCorrect((byte) 0);
+                        detail.setAiComment("未作答");
+                    } else {
+                        // 情况B：已作答 -> 暂设为0分，标记为未批改，触发AI
+                        detail.setScore(BigDecimal.ZERO);
+                        detail.setIsMarked((byte) 0);
+                        detail.setIsCorrect((byte) 0);
+                        hasSubjective = true; // 只有这里才置为true，表示需要后续处理
+                    }
                 }
 
                 detail.setCreateBy(userId);
@@ -252,7 +264,7 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
                 }
             });
         } else {
-            record.setStatus((byte) 3); // 3-已批改 (全客观题，直接完成)
+            record.setStatus((byte) 3); // 3-已批改 (全客观题或主观题全未答，直接完成)
             this.updateById(record);
         }
     }
@@ -320,5 +332,136 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
         stats.setMistakeCount((int) mistakeCount);
 
         return stats;
+    }
+
+    @Override
+    public Long getLatestRecordId(Long userId, Long publishId) {
+        Record record = this.getOne(new LambdaQueryWrapper<Record>()
+                .eq(Record::getUserId, userId)
+                .eq(Record::getPublishId, publishId)
+                .orderByDesc(Record::getCreateTime)
+                .last("LIMIT 1"));
+        return record != null ? record.getId() : null;
+    }
+
+    @Override
+    public StudentExamResultVo getStudentExamResult(Long recordId, Long userId) {
+        // 1. 获取并校验记录
+        Record record = this.getById(recordId);
+        if (record == null) {
+            throw new BizException(404, "考试记录不存在");
+        }
+        if (!record.getUserId().equals(userId)) {
+            throw new BizException(403, "无权查看他人成绩");
+        }
+        if (record.getStatus() < 2) {
+            throw new BizException(400, "考试尚未结束或未交卷");
+        }
+
+        // 2. 获取基础信息
+        Paper paper = paperService.getById(record.getPaperId());
+        
+        StudentExamResultVo vo = new StudentExamResultVo();
+        vo.setTitle(paper.getTitle());
+        vo.setUserScore(record.getTotalScore().doubleValue());
+        vo.setTotalScore(paper.getTotalScore().doubleValue());
+        vo.setPassScore(paper.getPassScore().doubleValue());
+        
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        vo.setStartTime(dtf.format(record.getStartTime()));
+        vo.setSubmitTime(dtf.format(record.getSubmitTime()));
+        
+        long minutes = Duration.between(record.getStartTime(), record.getSubmitTime()).toMinutes();
+        vo.setDuration(minutes + "分钟");
+
+        // 3. 计算击败率
+        // 统计同一次发布中，分数低于当前用户的记录数 (status>=2 表示已交卷)
+        long totalExaminees = this.count(new LambdaQueryWrapper<Record>()
+                .eq(Record::getPublishId, record.getPublishId())
+                .ge(Record::getStatus, 2)); 
+        
+        if (totalExaminees > 1) {
+            long beatCount = this.count(new LambdaQueryWrapper<Record>()
+                    .eq(Record::getPublishId, record.getPublishId())
+                    .ge(Record::getStatus, 2)
+                    .lt(Record::getTotalScore, record.getTotalScore()));
+            double rate = (double) beatCount / (totalExaminees - 1) * 100.0;
+            vo.setBeatRate(Math.round(rate * 10.0) / 10.0);
+        } else {
+            vo.setBeatRate(100.0); // 只有一个人也是第一
+        }
+
+        // 4. 获取题目详情与组装
+        List<RecordDetail> details = recordDetailService.list(new LambdaQueryWrapper<RecordDetail>()
+                .eq(RecordDetail::getRecordId, recordId));
+        
+        // 获取题目原始顺序
+        List<PaperQuestion> pqs = paperQuestionService.list(new LambdaQueryWrapper<PaperQuestion>()
+                .eq(PaperQuestion::getPaperId, paper.getId()));
+        Map<Long, Integer> sortMap = pqs.stream()
+                .collect(Collectors.toMap(PaperQuestion::getQuestionId, PaperQuestion::getSortOrder));
+
+        List<Long> qIds = details.stream().map(RecordDetail::getQuestionId).collect(Collectors.toList());
+        Map<Long, Question> qMap = qIds.isEmpty() ? Collections.emptyMap() : 
+                questionService.listByIds(qIds).stream()
+                .collect(Collectors.toMap(Question::getId, Function.identity()));
+
+        List<StudentExamResultVo.QuestionResultItem> qList = new ArrayList<>();
+        
+        // 用于雷达图计算: Key=Tag, Value=[MyScore, MaxScore]
+        Map<String, double[]> radarMap = new java.util.HashMap<>();
+
+        for (RecordDetail detail : details) {
+            Question q = qMap.get(detail.getQuestionId());
+            if (q == null) continue;
+
+            StudentExamResultVo.QuestionResultItem item = new StudentExamResultVo.QuestionResultItem();
+            item.setId(q.getId());
+            item.setQuestionNo(sortMap.getOrDefault(q.getId(), 999));
+            item.setType(q.getType().intValue());
+            item.setContent(q.getContent());
+            item.setOptions(q.getOptions());
+            item.setImageUrl(q.getImageUrl());
+            item.setStudentAnswer(detail.getStudentAnswer());
+            item.setCorrectAnswer(q.getAnswer());
+            item.setAnalysis(q.getAnalysis());
+            item.setScore(detail.getScore().doubleValue());
+            item.setMaxScore(detail.getMaxScore().doubleValue());
+            item.setIsCorrect(detail.getIsCorrect() != null ? detail.getIsCorrect().intValue() : 0);
+            item.setComment(detail.getAiComment());
+            qList.add(item);
+
+            // 统计雷达图数据
+            // 简单解析Tag JSON，取第一个标签。假设Tag格式为 JSON 数组或逗号分隔字符串
+            String tagName = "综合知识";
+            if (StrUtil.isNotEmpty(q.getTags())) {
+                 String clean = q.getTags().replace("[", "").replace("]", "").replace("\"", "");
+                 if (StrUtil.isNotEmpty(clean)) {
+                     tagName = clean.split(",")[0];
+                 }
+            }
+            
+            radarMap.computeIfAbsent(tagName, k -> new double[]{0.0, 0.0});
+            radarMap.get(tagName)[0] += detail.getScore().doubleValue();
+            radarMap.get(tagName)[1] += detail.getMaxScore().doubleValue();
+        }
+        
+        // 按题号排序
+        qList.sort(java.util.Comparator.comparingInt(StudentExamResultVo.QuestionResultItem::getQuestionNo));
+        vo.setQuestionList(qList);
+
+        // 5. 生成雷达图 List
+        List<StudentExamResultVo.RadarItem> radarItems = new ArrayList<>();
+        radarMap.forEach((k, v) -> {
+            StudentExamResultVo.RadarItem item = new StudentExamResultVo.RadarItem();
+            item.setName(k);
+            // 计算掌握度 (百分比)
+            item.setValue(v[1] > 0 ? Math.round(v[0] / v[1] * 100.0) : 0.0); 
+            item.setMax(100.0); // 统一刻度
+            radarItems.add(item);
+        });
+        vo.setRadarData(radarItems);
+
+        return vo;
     }
 }
