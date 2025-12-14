@@ -303,8 +303,8 @@ const submitting = ref(false)
 
 // --- Methods ---
 
-const fetchPapers = async () => {
-  paperLoading.value = true
+const fetchPapers = async (silent = false) => {
+  if (!silent) paperLoading.value = true
   try {
     const res = await request.get<ReviewPaperResp[]>('/review/papers')
     paperList.value = res || []
@@ -312,7 +312,7 @@ const fetchPapers = async () => {
     console.error(e)
     ElMessage.error('获取试卷列表失败')
   } finally {
-    paperLoading.value = false
+    if (!silent) paperLoading.value = false
   }
 }
 
@@ -385,7 +385,22 @@ const handleSelectStudent = async (student: ReviewListResp) => {
               ...q,
               score: initialScore, // 人工评分框默认显示当前分（即AI分）
               aiScore: initialScore, // 缓存一份作为AI基准分，用于“采纳”回滚
-              teacherComment: q.aiComment || '', // 初始评语使用 AI 评语
+              // 修改点：不再默认将 aiComment 赋值给 teacherComment
+              // 如果后端有保存过的人工评语，则显示；否则显示空字符串
+              // 假设后端复用 aiComment 字段存人工评语，则无法区分。
+              // 但如果后端没有专门的 teacherComment 字段返回，
+              // 且题目状态是未复核(isMarked=0)，则 teacherComment 应该为空。
+              // 题目状态是已复核(isMarked=1)，则 teacherComment 显示 q.aiComment (因为后端目前复用了字段)
+
+              // 逻辑优化：
+              // 如果已复核(isMarked=1)，显示 q.aiComment (这是老师之前提交的)
+              // 如果未复核(isMarked=0)，显示空字符串 (不显示AI评语)
+              teacherComment: q.isMarked === 1 ? (q.aiComment || '') : '',
+
+              // 为了显示在左侧AI建议区，我们需要原始的AI评语。
+              // 但后端如果复用了字段，且已复核覆盖了AI评语，那么左侧AI建议区也会变成老师的评语。
+              // 这是一个后端数据结构的设计缺陷（建议分离 ai_comment 和 teacher_comment）。
+              // 前端暂时只能做到：未复核时，人工框为空；已复核时，显示存储的评语。
               _modified: false
             }
           })
@@ -432,6 +447,9 @@ const submitSingleQuestion = async (q: ReviewQuestionDetail) => {
     q.isMarked = 1
     // 更新后，当前分数成为新的基准，但我们保持 aiScore 不变作为参考
     ElMessage.success('保存成功')
+
+    // 关键修复：刷新试卷列表，更新 pendingCount
+    await fetchPapers(true)
   } catch (e: any) {
     console.error(e)
     ElMessage.error(e.message || '保存失败')
@@ -465,6 +483,9 @@ const submitAllReviews = async () => {
     if (currentStudent.value) {
       currentStudent.value.status = 3
     }
+
+    // 关键修复：刷新试卷列表，更新 pendingCount
+    await fetchPapers(true) // 使用 await 确保状态最新
 
     const nextIndex = studentList.value.findIndex(s => s.status === 2 && s.id !== currentRecordId.value)
     if (nextIndex !== -1) {

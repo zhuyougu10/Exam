@@ -12,11 +12,12 @@ import com.university.exam.entity.Record;
 import com.university.exam.mapper.RecordMapper;
 import com.university.exam.service.*;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-// ... existing code ...
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -51,12 +52,14 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ExamPaperVo startExam(Long userId, Long publishId) {
-        // ... existing code ...
         LocalDateTime now = LocalDateTime.now();
 
         // 1. 获取发布信息校验
         Publish publish = publishService.getById(publishId);
-        // ... existing code ...
+        if (publish == null || publish.getStatus() != 1) {
+            throw new BizException(400, "考试不存在或未发布");
+        }
+
         // 校验时间
         if (now.isBefore(publish.getStartTime())) throw new BizException(400, "考试未开始");
         if (now.isAfter(publish.getEndTime())) throw new BizException(400, "考试已结束");
@@ -115,9 +118,6 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
         Map<Long, Question> qMap = questionService.listByIds(qIds).stream()
                 .collect(Collectors.toMap(Question::getId, Function.identity()));
 
-        // 如果是断点续考，加载已保存的答案（如果有）
-        // 这里简化处理，暂不回显已填答案，后续可优化查询 record_detail 临时表
-
         List<ExamPaperVo.QuestionVo> questionVos = new ArrayList<>();
         for (PaperQuestion pq : pqs) {
             Question q = qMap.get(pq.getQuestionId());
@@ -159,8 +159,15 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
         List<Long> questionIds = req.getAnswers().stream()
                 .map(SubmitExamRequest.AnswerItem::getQuestionId)
                 .collect(Collectors.toList());
-        Map<Long, Question> questionMap = questionService.listByIds(questionIds).stream()
-                .collect(Collectors.toMap(Question::getId, Function.identity()));
+
+        // 增加空判断，防止提交空卷导致空指针或查询报错
+        Map<Long, Question> questionMap;
+        if (CollUtil.isNotEmpty(questionIds)) {
+            questionMap = questionService.listByIds(questionIds).stream()
+                    .collect(Collectors.toMap(Question::getId, Function.identity()));
+        } else {
+            questionMap = Map.of();
+        }
 
         List<RecordDetail> details = new ArrayList<>();
         List<MistakeBook> mistakeList = new ArrayList<>();
@@ -235,8 +242,15 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
             record.setStatus((byte) 2); // 2-已交卷 (待AI阅卷)
             this.updateById(record);
 
-            // 6. 触发异步阅卷 (安全调用)
-            autoGradingService.gradeSubjectiveQuestionsAsync(record.getId());
+            // 6. 触发异步阅卷 (关键修改：事务提交后执行)
+            // 解决 "RecordDetail 未提交导致异步线程查不到数据" 的问题
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    log.info("事务已提交，触发异步阅卷任务: recordId={}", record.getId());
+                    autoGradingService.gradeSubjectiveQuestionsAsync(record.getId());
+                }
+            });
         } else {
             record.setStatus((byte) 3); // 3-已批改 (全客观题，直接完成)
             this.updateById(record);
@@ -263,7 +277,6 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
                 mistakeBookService.update(update, new LambdaQueryWrapper<MistakeBook>()
                         .eq(MistakeBook::getUserId, mb.getUserId())
                         .eq(MistakeBook::getQuestionId, mb.getQuestionId()));
-                // 也可以自增 wrong_count，MyBatis-Plus 需要写 SQL 或取出来更新，这里简化
             } else {
                 mistakeBookService.save(mb);
             }
@@ -291,8 +304,7 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
                     .average().orElse(0.0);
             stats.setAvgScore(Math.round(avg * 10.0) / 10.0); // 保留一位小数
 
-            // 3. 及格次数 (假设60分及格，实际应查 Paper.passScore)
-            // 这里为了性能不做联表，简化为 totalScore >= 60
+            // 3. 及格次数 (假设60分及格)
             long passCount = finishedRecords.stream()
                     .filter(r -> r.getTotalScore().doubleValue() >= 60.0)
                     .count();

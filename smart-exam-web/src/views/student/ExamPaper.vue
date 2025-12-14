@@ -2,7 +2,6 @@
   <div class="exam-app-container">
 
     <!-- 全屏检测遮罩 -->
-    <!-- 修改点 1: 增加 !isSubmitting 判断，防止交卷退出全屏时闪烁遮罩 -->
     <div v-if="!isFullscreen && !isSubmitting" class="fullscreen-mask">
       <div class="mask-content">
         <el-icon class="mask-icon"><Warning /></el-icon>
@@ -140,7 +139,7 @@
                 <!-- 单选 / 判断 -->
                 <div v-if="[1, 3].includes(question.type)" class="options-list">
                   <div
-                      v-for="opt in parseOptions(question.options)"
+                      v-for="opt in parseOptions(question.options, question.type)"
                       :key="opt.key"
                       class="option-item"
                       :class="{ 'selected': userAnswers[question.id] === opt.key }"
@@ -154,7 +153,7 @@
                 <!-- 多选 -->
                 <div v-if="question.type === 2" class="options-list">
                   <div
-                      v-for="opt in parseOptions(question.options)"
+                      v-for="opt in parseOptions(question.options, question.type)"
                       :key="opt.key"
                       class="option-item"
                       :class="{ 'selected': isChecked(question.id, opt.key) }"
@@ -209,7 +208,7 @@ interface Question {
   type: 1 | 2 | 3 | 4 | 5;
   content: string;
   score: number;
-  options: string[] | string; // 兼容后端可能返回的格式
+  options: string[] | string;
   imageUrl?: string;
   savedAnswer?: string | null;
 }
@@ -244,7 +243,7 @@ const paperData = ref<PaperData>({
   questions: []
 })
 
-// 用户答案映射 (存储前端显示的 Key: 'A', 'B' 或 文本)
+// 用户答案映射 (前端 Key: 'A', 'B' 或 文本)
 const userAnswers = ref<Record<number, any>>({})
 
 const { isFullscreen, enterFullscreen } = useProctor({
@@ -273,7 +272,7 @@ const initExam = async () => {
 
     if (paperData.value.questions) {
       paperData.value.questions.forEach((q: Question) => {
-        // 恢复答案逻辑：将后端存储的 "0", "[0,2]", "1" 转换回前端的 "A", ["A","C"], "A"
+        // 恢复答案逻辑
         if (q.savedAnswer) {
           try {
             if (q.type === 1) {
@@ -287,8 +286,9 @@ const initExam = async () => {
                 userAnswers.value[q.id] = indices.map((i: number) => String.fromCharCode(65 + i))
               }
             } else if (q.type === 3) {
-              // 判断: "1" -> "A", "0" -> "B"
-              userAnswers.value[q.id] = q.savedAnswer === '1' ? 'A' : 'B'
+              // 判断: "1" -> "A" (正确), "0" -> "B" (错误)
+              // 注意数据类型转换，防止字符串 '1' 和数字 1 比较出错
+              userAnswers.value[q.id] = (String(q.savedAnswer) === '1') ? 'A' : 'B'
             } else {
               // 简答/填空
               userAnswers.value[q.id] = q.savedAnswer
@@ -434,9 +434,7 @@ const confirmSubmit = () => {
   })
 }
 
-// ------------------------------------------------
-// 核心修复：提交逻辑适配后端 DTO (AnswerItem)
-// ------------------------------------------------
+// 提交逻辑
 const submitExam = async (force = false) => {
   isSubmitting.value = true
 
@@ -447,7 +445,6 @@ const submitExam = async (force = false) => {
   })
 
   try {
-    // 构造 List<AnswerItem>
     const answersList = paperData.value.questions.map((q) => {
       const qId = q.id;
       const val = userAnswers.value[qId];
@@ -466,7 +463,7 @@ const submitExam = async (force = false) => {
           submitVal = JSON.stringify(indices)
         }
       } else if (q.type === 3) {
-        // 判断: "A" -> "1", "B" -> "0"
+        // 判断: "A"(正确) -> "1", "B"(错误) -> "0"
         if (val === 'A') submitVal = '1'
         else if (val === 'B') submitVal = '0'
       } else {
@@ -474,14 +471,12 @@ const submitExam = async (force = false) => {
         submitVal = String(val || '')
       }
 
-      // DTO: { questionId: Long, userAnswer: String }
       return {
         questionId: Number(qId),
         userAnswer: submitVal
       }
     })
 
-    // DTO: SubmitExamRequest { recordId, answers }
     const requestData = {
       recordId: paperData.value.recordId,
       answers: answersList
@@ -511,15 +506,17 @@ const formatContent = (content: string) => {
   return content.replace(/_{3,}/g, '<span style="border-bottom:1px solid #333; padding:0 10px; display:inline-block; min-width:30px;"></span>').replace(/\n/g, '<br/>')
 }
 
-// 解析选项
+// 核心修复：选项解析，处理判断题
 const parseOptions = (optionsData: any, qType: number): QuestionOption[] => {
-  if (qType === 3) {
+  // 1. 判断题 (Type 3)：强制返回固定选项
+  if (Number(qType) === 3) {
     return [
       { key: 'A', value: '正确' },
       { key: 'B', value: '错误' }
     ]
   }
 
+  // 2. 选择题 (Type 1, 2)：解析后端数组
   let arr: string[] = []
   if (Array.isArray(optionsData)) {
     arr = optionsData
@@ -567,13 +564,11 @@ onUnmounted(() => {
 
 <style scoped>
 /* ----------------------------------------
-  原生 CSS 样式重构 - Native Styles
-  风格：干净、专业、类似 Notion/Linear
+  原生 CSS 样式重构
   ----------------------------------------
 */
 
-/* 全局容器：使用 fixed 定位强行覆盖整个视口，
-   Z-Index 设为 2000 以高于 Layout 的 Sidebar/Header */
+/* 全局容器 */
 .exam-app-container {
   position: fixed;
   top: 0;
@@ -585,7 +580,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background-color: #f7f9fc; /* 必须设置背景色，防止底层透出 */
+  background-color: #f7f9fc;
   color: #1a202c;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   overflow: hidden;
@@ -615,7 +610,7 @@ onUnmounted(() => {
 .logo-box {
   width: 36px;
   height: 36px;
-  background-color: #4f46e5; /* Indigo */
+  background-color: #4f46e5;
   color: white;
   border-radius: 8px;
   display: flex;
@@ -749,7 +744,7 @@ onUnmounted(() => {
 .exam-body {
   display: flex;
   flex: 1;
-  overflow: hidden; /* 防止双滚动条 */
+  overflow: hidden;
 }
 
 .exam-sidebar {
@@ -1065,7 +1060,7 @@ onUnmounted(() => {
 }
 
 .checkbox-key {
-  border-radius: 6px; /* 多选为方框 */
+  border-radius: 6px;
 }
 
 .option-item:hover .opt-key {
@@ -1235,13 +1230,13 @@ onUnmounted(() => {
 /* 响应式微调 */
 @media (max-width: 768px) {
   .exam-sidebar {
-    display: none; /* 移动端暂藏侧边栏，或改为抽屉 */
+    display: none;
   }
   .exam-main {
     padding: 20px;
   }
   .header-center {
-    display: none; /* 小屏隐藏倒计时或移至次级 */
+    display: none;
   }
 }
 </style>
