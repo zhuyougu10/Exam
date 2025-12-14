@@ -125,7 +125,7 @@ public class AutoGradingServiceImpl implements AutoGradingService {
                             detail.setIsCorrect(aiScore.compareTo(detail.getMaxScore()) == 0 ? (byte)1 : (byte)0);
                             
                             hasUpdates = true;
-                            log.info("题目[{}] AI 评分完成: 得分={}", q.getId(), aiScore);
+                            log.info("题目[{}] AI 评分完成: 得分={},ai评语{}", q.getId(), aiScore, aiComment);
 
                             // 如果得分低于满分的 60%，加入错题本
                             BigDecimal passLine = detail.getMaxScore().multiply(new BigDecimal("0.6"));

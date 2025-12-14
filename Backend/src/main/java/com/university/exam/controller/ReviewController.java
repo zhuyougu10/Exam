@@ -1,10 +1,12 @@
 package com.university.exam.controller;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.university.exam.common.dto.review.ReviewListResp;
+import com.university.exam.common.dto.review.ReviewPaperResp;
 import com.university.exam.common.dto.review.ReviewSubmitReq;
 import com.university.exam.common.exception.BizException;
 import com.university.exam.common.result.Result;
@@ -32,7 +34,7 @@ import java.util.stream.Collectors;
  * 阅卷/复核管理控制器
  *
  * @author MySQL数据库架构师
- * @version 1.0.0
+ * @version 1.1.0
  * @since 2025-12-14
  */
 @RestController
@@ -48,59 +50,135 @@ public class ReviewController {
     private final PaperService paperService;
     private final CourseUserService courseUserService;
     private final DeptService deptService;
+    private final CourseService courseService;
 
     /**
-     * 获取待批改/已批改列表
+     * 获取待阅试卷列表 (含统计信息)
+     * GET /api/review/papers
+     */
+    @GetMapping("/papers")
+    public Result<?> getPaperList() {
+        Long currentUserId = getCurrentUserId();
+        Integer role = getCurrentUserRole();
+
+        // 1. 获取教师负责的课程
+        List<Long> courseIds = new ArrayList<>();
+        if (role == 2) {
+            courseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
+                            .eq(CourseUser::getUserId, currentUserId)
+                            .eq(CourseUser::getRole, 2))
+                    .stream().map(CourseUser::getCourseId).collect(Collectors.toList());
+            
+            if (courseIds.isEmpty()) {
+                return Result.success(new ArrayList<>());
+            }
+        }
+
+        // 2. 查询相关试卷
+        LambdaQueryWrapper<Paper> paperQuery = new LambdaQueryWrapper<>();
+        if (!courseIds.isEmpty()) {
+            paperQuery.in(Paper::getCourseId, courseIds);
+        }
+        paperQuery.orderByDesc(Paper::getCreateTime);
+        List<Paper> papers = paperService.list(paperQuery);
+
+        if (papers.isEmpty()) {
+            return Result.success(new ArrayList<>());
+        }
+
+        // 3. 准备统计数据 (查询所有相关记录进行内存聚合，避免N+1查询)
+        List<Long> paperIds = papers.stream().map(Paper::getId).collect(Collectors.toList());
+        List<Record> records = recordService.list(new LambdaQueryWrapper<Record>()
+                .in(Record::getPaperId, paperIds)
+                .in(Record::getStatus, 2, 3)); // 只关注已交卷(2)和已完成(3)
+
+        // 分组统计：Map<PaperId, Map<Status, Count>>
+        Map<Long, Map<Byte, Long>> statsMap = records.stream()
+                .collect(Collectors.groupingBy(
+                        Record::getPaperId,
+                        Collectors.groupingBy(Record::getStatus, Collectors.counting())
+                ));
+
+        // 缓存课程名称
+        List<Long> allCourseIds = papers.stream().map(Paper::getCourseId).distinct().toList();
+        Map<Long, String> courseNameMap = courseService.listByIds(allCourseIds).stream()
+                .collect(Collectors.toMap(Course::getId, Course::getCourseName));
+
+        // 4. 组装结果
+        List<ReviewPaperResp> result = new ArrayList<>();
+        for (Paper paper : papers) {
+            Map<Byte, Long> paperStats = statsMap.getOrDefault(paper.getId(), new HashMap<>());
+            long pending = paperStats.getOrDefault((byte) 2, 0L);
+            long reviewed = paperStats.getOrDefault((byte) 3, 0L);
+
+            // 如果没有提交记录，且不是管理员，可能不需要显示（视业务需求而定，这里全部显示）
+            
+            ReviewPaperResp vo = new ReviewPaperResp();
+            vo.setId(paper.getId());
+            vo.setTitle(paper.getTitle());
+            vo.setCourseId(paper.getCourseId());
+            vo.setCourseName(courseNameMap.getOrDefault(paper.getCourseId(), "未知课程"));
+            vo.setStatus(paper.getStatus().intValue());
+            
+            vo.setPendingCount(pending);
+            vo.setReviewedCount(reviewed);
+            vo.setTotalCount(pending + reviewed);
+
+            result.add(vo);
+        }
+
+        return Result.success(result);
+    }
+
+    /**
+     * 获取考生列表
      * GET /api/review/list
      */
     @GetMapping("/list")
     public Result<?> getList(@RequestParam(defaultValue = "1") Integer page,
                              @RequestParam(defaultValue = "10") Integer size,
+                             @RequestParam(required = false) Long paperId,   // 新增：按试卷筛选
                              @RequestParam(required = false) Long courseId,
                              @RequestParam(required = false) String studentName,
                              @RequestParam(required = false) Integer status) { // 2-待批改, 3-已完成
-        Long currentUserId = getCurrentUserId();
-        Integer role = getCurrentUserRole();
-
-        // 1. 获取该教师负责的课程 ID 列表 (管理员忽略)
-        List<Long> allowedCourseIds = null;
-        if (role == 2) {
-            allowedCourseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
-                            .eq(CourseUser::getUserId, currentUserId)
-                            .eq(CourseUser::getRole, 2))
-                    .stream().map(CourseUser::getCourseId).collect(Collectors.toList());
-            
-            if (allowedCourseIds.isEmpty()) {
-                return Result.success(new Page<ReviewListResp>());
+        
+        // 构建查询条件
+        LambdaQueryWrapper<Record> recordQuery = new LambdaQueryWrapper<>();
+        
+        // 1. 试卷/课程筛选
+        if (paperId != null) {
+            recordQuery.eq(Record::getPaperId, paperId);
+        } else if (courseId != null) {
+            // 如果只传了 courseId，先查出该课程下的所有 paperId
+            List<Paper> coursePapers = paperService.list(new LambdaQueryWrapper<Paper>().eq(Paper::getCourseId, courseId));
+            if (coursePapers.isEmpty()) return Result.success(new Page<ReviewListResp>());
+            recordQuery.in(Record::getPaperId, coursePapers.stream().map(Paper::getId).toList());
+        } else {
+            // 既没传 paperId 也没传 courseId，如果是教师，限制在自己负责的课程范围内
+            if (getCurrentUserRole() == 2) {
+                Long currentUserId = getCurrentUserId();
+                List<Long> myCourseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
+                        .eq(CourseUser::getUserId, currentUserId)
+                        .eq(CourseUser::getRole, 2))
+                        .stream().map(CourseUser::getCourseId).toList();
+                
+                if (myCourseIds.isEmpty()) return Result.success(new Page<ReviewListResp>());
+                
+                List<Paper> myPapers = paperService.list(new LambdaQueryWrapper<Paper>().in(Paper::getCourseId, myCourseIds));
+                if (myPapers.isEmpty()) return Result.success(new Page<ReviewListResp>());
+                
+                recordQuery.in(Record::getPaperId, myPapers.stream().map(Paper::getId).toList());
             }
         }
 
-        // 2. 联表逻辑较复杂，这里采用分步查询优化 (先查 Paper，再查 Record)
-        // 查找符合条件的试卷 ID
-        LambdaQueryWrapper<Paper> paperQuery = new LambdaQueryWrapper<>();
-        if (courseId != null) {
-            paperQuery.eq(Paper::getCourseId, courseId);
-        } else if (role == 2) {
-            paperQuery.in(Paper::getCourseId, allowedCourseIds);
-        }
-        List<Paper> papers = paperService.list(paperQuery);
-        if (papers.isEmpty()) {
-            return Result.success(new Page<ReviewListResp>());
-        }
-        List<Long> paperIds = papers.stream().map(Paper::getId).collect(Collectors.toList());
-        Map<Long, Paper> paperMap = papers.stream().collect(Collectors.toMap(Paper::getId, Function.identity()));
-
-        // 3. 查询考试记录
-        LambdaQueryWrapper<Record> recordQuery = new LambdaQueryWrapper<>();
-        recordQuery.in(Record::getPaperId, paperIds);
-        // 只查询已交卷(2)或已批改(3)
+        // 2. 状态筛选
         if (status != null) {
             recordQuery.eq(Record::getStatus, status);
         } else {
             recordQuery.in(Record::getStatus, 2, 3);
         }
         
-        // 姓名搜索需要先查用户ID (性能优化点: 大数据量应走ES，这里数据库量小直接查)
+        // 3. 姓名搜索
         if (StringUtils.hasText(studentName)) {
             List<Long> userIds = userService.list(new LambdaQueryWrapper<User>()
                     .like(User::getRealName, studentName))
@@ -113,16 +191,21 @@ public class ReviewController {
 
         recordQuery.orderByDesc(Record::getSubmitTime);
 
+        // 4. 执行分页查询
         IPage<Record> recordPage = recordService.page(new Page<>(page, size), recordQuery);
 
-        // 4. 组装 VO
+        // 5. 组装 VO
         List<ReviewListResp> voList = new ArrayList<>();
         if (!recordPage.getRecords().isEmpty()) {
+            // 批量查询依赖数据
             List<Long> userIds = recordPage.getRecords().stream().map(Record::getUserId).distinct().toList();
+            List<Long> pIds = recordPage.getRecords().stream().map(Record::getPaperId).distinct().toList();
+            
             Map<Long, User> userMap = userService.listByIds(userIds).stream()
                     .collect(Collectors.toMap(User::getId, Function.identity()));
+            Map<Long, Paper> paperMap = paperService.listByIds(pIds).stream()
+                    .collect(Collectors.toMap(Paper::getId, Function.identity()));
             
-            // 部门信息
             List<Long> deptIds = userMap.values().stream().map(User::getDeptId).distinct().toList();
             Map<Long, Dept> deptMap = new HashMap<>();
             if (!deptIds.isEmpty()) {
@@ -143,13 +226,11 @@ public class ReviewController {
                     vo.setDeptName(d != null ? d.getDeptName() : "-");
                 }
 
-                // 状态描述
                 vo.setReviewStatusDesc(record.getStatus() == 3 ? "已完成" : "待复核");
                 voList.add(vo);
             }
         }
 
-        // 构造返回分页对象
         Page<ReviewListResp> resultPage = new Page<>(page, size);
         resultPage.setTotal(recordPage.getTotal());
         resultPage.setRecords(voList);
@@ -199,6 +280,10 @@ public class ReviewController {
             item.put("aiComment", detail.getAiComment());
             item.put("isMarked", detail.getIsMarked());
 
+            // 排序序号
+            // 这里为了简单没有查 PaperQuestion 的 sortOrder，实际建议联表查询
+            // 前端可以根据列表顺序显示
+
             questionList.add(item);
         }
 
@@ -235,9 +320,10 @@ public class ReviewController {
         // 更新明细
         detail.setScore(req.getScore());
         if (StringUtils.hasText(req.getComment())) {
-            detail.setAiComment(req.getComment()); // 复用字段存人工评语，或前缀区分
+            detail.setAiComment(req.getComment()); // 复用字段存人工评语
         }
         detail.setIsMarked((byte) 1);
+        // 如果分数等于满分，视为正确；否则错误（简化逻辑）
         detail.setIsCorrect(req.getScore().compareTo(detail.getMaxScore()) == 0 ? (byte)1 : (byte)0);
         detail.setUpdateBy(getCurrentUserId());
         detail.setUpdateTime(LocalDateTime.now());
