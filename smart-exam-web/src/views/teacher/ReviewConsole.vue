@@ -379,28 +379,12 @@ const handleSelectStudent = async (student: ReviewListResp) => {
       subjectiveQuestions.value = allQuestions
           .filter(q => q.type === 4 || q.type === 5)
           .map(q => {
-            // 初始加载的分数视为 AI 分数 (或上次保存的分数)
             const initialScore = q.score !== undefined ? q.score : 0;
             return {
               ...q,
-              score: initialScore, // 人工评分框默认显示当前分（即AI分）
-              aiScore: initialScore, // 缓存一份作为AI基准分，用于“采纳”回滚
-              // 修改点：不再默认将 aiComment 赋值给 teacherComment
-              // 如果后端有保存过的人工评语，则显示；否则显示空字符串
-              // 假设后端复用 aiComment 字段存人工评语，则无法区分。
-              // 但如果后端没有专门的 teacherComment 字段返回，
-              // 且题目状态是未复核(isMarked=0)，则 teacherComment 应该为空。
-              // 题目状态是已复核(isMarked=1)，则 teacherComment 显示 q.aiComment (因为后端目前复用了字段)
-
-              // 逻辑优化：
-              // 如果已复核(isMarked=1)，显示 q.aiComment (这是老师之前提交的)
-              // 如果未复核(isMarked=0)，显示空字符串 (不显示AI评语)
+              score: initialScore,
+              aiScore: initialScore,
               teacherComment: q.isMarked === 1 ? (q.aiComment || '') : '',
-
-              // 为了显示在左侧AI建议区，我们需要原始的AI评语。
-              // 但后端如果复用了字段，且已复核覆盖了AI评语，那么左侧AI建议区也会变成老师的评语。
-              // 这是一个后端数据结构的设计缺陷（建议分离 ai_comment 和 teacher_comment）。
-              // 前端暂时只能做到：未复核时，人工框为空；已复核时，显示存储的评语。
               _modified: false
             }
           })
@@ -413,11 +397,10 @@ const handleSelectStudent = async (student: ReviewListResp) => {
   }
 }
 
-// 采纳 AI 建议：恢复到初始加载的分数和评语
 const adoptAiScore = (q: ReviewQuestionDetail) => {
   q.score = q.aiScore
   q.teacherComment = q.aiComment || ''
-  q._modified = true // 标记为修改，允许提交
+  q._modified = true
   ElMessage.success('已恢复 AI 预评分数')
 }
 
@@ -432,6 +415,7 @@ const markAsModified = (q: ReviewQuestionDetail) => {
   q._modified = true
 }
 
+// 单题提交 (保留原有逻辑，调用旧接口或新接口皆可，这里为了兼容单题操作，暂不强改，但建议也走批量逻辑的包装)
 const submitSingleQuestion = async (q: ReviewQuestionDetail) => {
   if (!currentRecordId.value) return
 
@@ -445,10 +429,9 @@ const submitSingleQuestion = async (q: ReviewQuestionDetail) => {
 
     q._modified = false
     q.isMarked = 1
-    // 更新后，当前分数成为新的基准，但我们保持 aiScore 不变作为参考
     ElMessage.success('保存成功')
 
-    // 关键修复：刷新试卷列表，更新 pendingCount
+    // 刷新试卷列表待阅数
     await fetchPapers(true)
   } catch (e: any) {
     console.error(e)
@@ -456,8 +439,11 @@ const submitSingleQuestion = async (q: ReviewQuestionDetail) => {
   }
 }
 
+// --- 核心修改：批量提交 ---
 const submitAllReviews = async () => {
   if (!currentRecordId.value) return
+
+  // 获取所有主观题 (不仅是修改过的，而是当前页面上的所有状态，确保"保存全部"的语义)
   const targets = subjectiveQuestions.value
 
   if (targets.length === 0) {
@@ -467,37 +453,46 @@ const submitAllReviews = async () => {
 
   submitting.value = true
   try {
-    const promises = targets.map(q => {
-      return request.post('/review/submit', {
-        recordId: currentRecordId.value,
-        questionId: q.questionId,
-        score: q.score,
-        comment: q.teacherComment
-      })
-    })
+    // 构造请求列表
+    const requestBody = targets.map(q => ({
+      recordId: currentRecordId.value,
+      questionId: q.questionId,
+      score: q.score,
+      comment: q.teacherComment
+    }))
 
-    await Promise.all(promises)
+    // 调用新的批量接口
+    const res = await request.post('/review/submit-batch', requestBody)
 
     ElMessage.success('全部提交成功')
 
+    // 更新界面状态
     if (currentStudent.value) {
-      currentStudent.value.status = 3
+      currentStudent.value.status = 3 // 标记为已阅
     }
 
-    // 关键修复：刷新试卷列表，更新 pendingCount
-    await fetchPapers(true) // 使用 await 确保状态最新
+    // 将所有题目标记为已保存
+    subjectiveQuestions.value.forEach(q => {
+      q._modified = false
+      q.isMarked = 1
+    })
 
+    // 刷新左侧列表 (静默刷新)
+    await fetchPapers(true)
+
+    // 尝试跳到下一个待阅学生
     const nextIndex = studentList.value.findIndex(s => s.status === 2 && s.id !== currentRecordId.value)
     if (nextIndex !== -1) {
       handleSelectStudent(studentList.value[nextIndex])
     } else {
+      // 如果没有下一个，就刷新学生列表
       handleStudentFilter()
       currentRecordId.value = null
     }
 
   } catch (e: any) {
     console.error(e)
-    ElMessage.error('部分提交失败，请重试')
+    ElMessage.error(e.message || '批量提交失败')
   } finally {
     submitting.value = false
   }

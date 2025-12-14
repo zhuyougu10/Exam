@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
  * 阅卷/复核管理控制器
  *
  * @author MySQL数据库架构师
- * @version 1.1.0
+ * @version 1.2.0
  * @since 2025-12-14
  */
 @RestController
@@ -111,8 +111,6 @@ public class ReviewController {
             long pending = paperStats.getOrDefault((byte) 2, 0L);
             long reviewed = paperStats.getOrDefault((byte) 3, 0L);
 
-            // 如果没有提交记录，且不是管理员，可能不需要显示（视业务需求而定，这里全部显示）
-            
             ReviewPaperResp vo = new ReviewPaperResp();
             vo.setId(paper.getId());
             vo.setTitle(paper.getTitle());
@@ -137,10 +135,10 @@ public class ReviewController {
     @GetMapping("/list")
     public Result<?> getList(@RequestParam(defaultValue = "1") Integer page,
                              @RequestParam(defaultValue = "10") Integer size,
-                             @RequestParam(required = false) Long paperId,   // 新增：按试卷筛选
+                             @RequestParam(required = false) Long paperId,
                              @RequestParam(required = false) Long courseId,
                              @RequestParam(required = false) String studentName,
-                             @RequestParam(required = false) Integer status) { // 2-待批改, 3-已完成
+                             @RequestParam(required = false) Integer status) {
         
         // 构建查询条件
         LambdaQueryWrapper<Record> recordQuery = new LambdaQueryWrapper<>();
@@ -149,12 +147,10 @@ public class ReviewController {
         if (paperId != null) {
             recordQuery.eq(Record::getPaperId, paperId);
         } else if (courseId != null) {
-            // 如果只传了 courseId，先查出该课程下的所有 paperId
             List<Paper> coursePapers = paperService.list(new LambdaQueryWrapper<Paper>().eq(Paper::getCourseId, courseId));
             if (coursePapers.isEmpty()) return Result.success(new Page<ReviewListResp>());
             recordQuery.in(Record::getPaperId, coursePapers.stream().map(Paper::getId).toList());
         } else {
-            // 既没传 paperId 也没传 courseId，如果是教师，限制在自己负责的课程范围内
             if (getCurrentUserRole() == 2) {
                 Long currentUserId = getCurrentUserId();
                 List<Long> myCourseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
@@ -197,7 +193,6 @@ public class ReviewController {
         // 5. 组装 VO
         List<ReviewListResp> voList = new ArrayList<>();
         if (!recordPage.getRecords().isEmpty()) {
-            // 批量查询依赖数据
             List<Long> userIds = recordPage.getRecords().stream().map(Record::getUserId).distinct().toList();
             List<Long> pIds = recordPage.getRecords().stream().map(Record::getPaperId).distinct().toList();
             
@@ -239,7 +234,7 @@ public class ReviewController {
     }
 
     /**
-     * 获取阅卷详情 (含题目、学生答案、AI评分)
+     * 获取阅卷详情
      * GET /api/review/detail/{recordId}
      */
     @GetMapping("/detail/{recordId}")
@@ -247,26 +242,22 @@ public class ReviewController {
         Record record = recordService.getById(recordId);
         if (record == null) throw new BizException(404, "记录不存在");
 
-        // 权限检查
         checkPermission(record);
 
-        // 获取明细
         List<RecordDetail> details = recordDetailService.list(new LambdaQueryWrapper<RecordDetail>()
                 .eq(RecordDetail::getRecordId, recordId));
         
-        // 获取题目信息
         List<Long> qIds = details.stream().map(RecordDetail::getQuestionId).collect(Collectors.toList());
         Map<Long, Question> qMap = questionService.listByIds(qIds).stream()
                 .collect(Collectors.toMap(Question::getId, Function.identity()));
 
-        // 组装详情
         List<Map<String, Object>> questionList = new ArrayList<>();
         for (RecordDetail detail : details) {
             Question q = qMap.get(detail.getQuestionId());
             if (q == null) continue;
 
             Map<String, Object> item = new HashMap<>();
-            item.put("detailId", detail.getId()); // 用于提交修改
+            item.put("detailId", detail.getId());
             item.put("questionId", q.getId());
             item.put("type", q.getType());
             item.put("content", q.getContent());
@@ -280,10 +271,6 @@ public class ReviewController {
             item.put("aiComment", detail.getAiComment());
             item.put("isMarked", detail.getIsMarked());
 
-            // 排序序号
-            // 这里为了简单没有查 PaperQuestion 的 sortOrder，实际建议联表查询
-            // 前端可以根据列表顺序显示
-
             questionList.add(item);
         }
 
@@ -295,59 +282,100 @@ public class ReviewController {
     }
 
     /**
-     * 提交人工复核结果 (修改分数)
+     * 提交单题人工复核结果
      * POST /api/review/submit
      */
     @PostMapping("/submit")
     @Transactional(rollbackFor = Exception.class)
     public Result<?> submitReview(@Valid @RequestBody ReviewSubmitReq req) {
-        Record record = recordService.getById(req.getRecordId());
+        // 调用封装的批量逻辑，将单个请求包装成List
+        List<ReviewSubmitReq> list = new ArrayList<>();
+        list.add(req);
+        return submitReviewBatch(list);
+    }
+
+    /**
+     * 批量提交人工复核结果 (核心修复逻辑)
+     * POST /api/review/submit-batch
+     */
+    @PostMapping("/submit-batch")
+    @Transactional(rollbackFor = Exception.class)
+    public Result<?> submitReviewBatch(@Valid @RequestBody List<ReviewSubmitReq> reqList) {
+        if (CollUtil.isEmpty(reqList)) {
+            return Result.error(400,"提交列表不能为空");
+        }
+
+        // 取出 recordId (同一批次属于同一个 record)
+        Long recordId = reqList.get(0).getRecordId();
+        Record record = recordService.getById(recordId);
         if (record == null) throw new BizException(404, "记录不存在");
         
         checkPermission(record);
 
-        RecordDetail detail = recordDetailService.getOne(new LambdaQueryWrapper<RecordDetail>()
-                .eq(RecordDetail::getRecordId, req.getRecordId())
-                .eq(RecordDetail::getQuestionId, req.getQuestionId()));
-        
-        if (detail == null) throw new BizException(404, "题目记录不存在");
+        // 1. 获取当前数据库中的所有明细，构建 Map 方便查找
+        List<RecordDetail> dbDetails = recordDetailService.list(new LambdaQueryWrapper<RecordDetail>()
+                .eq(RecordDetail::getRecordId, recordId));
+        Map<Long, RecordDetail> detailMap = dbDetails.stream()
+                .collect(Collectors.toMap(RecordDetail::getQuestionId, Function.identity()));
 
-        // 校验分数
-        if (req.getScore().compareTo(detail.getMaxScore()) > 0) {
-            throw new BizException(400, "打分不能超过该题满分: " + detail.getMaxScore());
+        List<RecordDetail> updates = new ArrayList<>();
+
+        // 2. 遍历请求，更新内存对象并收集需要更新的记录
+        for (ReviewSubmitReq req : reqList) {
+            if (!recordId.equals(req.getRecordId())) {
+                throw new BizException(400, "批量提交只能包含同一份试卷的记录");
+            }
+
+            RecordDetail detail = detailMap.get(req.getQuestionId());
+            if (detail == null) {
+                // 如果题目不存在，可能是脏数据，选择跳过或报错。这里选择跳过。
+                continue;
+            }
+
+            // 校验分数
+            if (req.getScore().compareTo(detail.getMaxScore()) > 0) {
+                throw new BizException(400, "题目ID " + req.getQuestionId() + " 打分不能超过满分: " + detail.getMaxScore());
+            }
+
+            // 更新字段
+            detail.setScore(req.getScore());
+            if (StringUtils.hasText(req.getComment())) {
+                detail.setAiComment(req.getComment());
+            }
+            detail.setIsMarked((byte) 1); // 标记为已批改
+            // 简单逻辑：满分即正确
+            detail.setIsCorrect(req.getScore().compareTo(detail.getMaxScore()) == 0 ? (byte)1 : (byte)0);
+            detail.setUpdateBy(getCurrentUserId());
+            detail.setUpdateTime(LocalDateTime.now());
+            
+            updates.add(detail);
         }
 
-        // 更新明细
-        detail.setScore(req.getScore());
-        if (StringUtils.hasText(req.getComment())) {
-            detail.setAiComment(req.getComment()); // 复用字段存人工评语
+        // 3. 批量更新到数据库
+        if (!updates.isEmpty()) {
+            recordDetailService.updateBatchById(updates);
         }
-        detail.setIsMarked((byte) 1);
-        // 如果分数等于满分，视为正确；否则错误（简化逻辑）
-        detail.setIsCorrect(req.getScore().compareTo(detail.getMaxScore()) == 0 ? (byte)1 : (byte)0);
-        detail.setUpdateBy(getCurrentUserId());
-        detail.setUpdateTime(LocalDateTime.now());
-        recordDetailService.updateById(detail);
 
-        // 重新计算总分
-        List<RecordDetail> allDetails = recordDetailService.list(new LambdaQueryWrapper<RecordDetail>()
-                .eq(RecordDetail::getRecordId, req.getRecordId()));
-        
-        BigDecimal newTotal = allDetails.stream()
-                .map(RecordDetail::getScore)
+        // 4. 计算新的总分 (基于内存中已更新的 dbDetails)
+        BigDecimal newTotal = dbDetails.stream()
+                .map(d -> d.getScore() == null ? BigDecimal.ZERO : d.getScore())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        
+
         record.setTotalScore(newTotal);
-        
-        // 检查是否全部批改完
-        boolean allMarked = allDetails.stream().allMatch(d -> d.getIsMarked() == 1);
+
+        // 5. 检查状态：是否所有题目都已批改
+        boolean allMarked = dbDetails.stream().allMatch(d -> d.getIsMarked() == 1);
         if (allMarked) {
             record.setStatus((byte) 3); // 已完成
+        } else {
+            // 如果之前是完成状态，现在可能有题目被回退（虽然目前业务没这逻辑），还是保持严谨
+            record.setStatus((byte) 2); 
         }
         
+        // 6. 更新试卷记录
         recordService.updateById(record);
 
-        return Result.success(newTotal, "分数已更新");
+        return Result.success(newTotal, "批量提交成功");
     }
 
     private void checkPermission(Record record) {
