@@ -1,8 +1,7 @@
 @import "tailwindcss";
 
-/* @theme 块是 Tailwind CSS v4 的核心配置区域。
-  在这里定义的 CSS 变量会自动生成对应的 Tailwind 工具类。
-  例如：定义 --color-exam-purple 后，即可使用 text-exam-purple, bg-exam-purple 等类名。
+/* @theme 配置区域
+  保留了你定义的自定义颜色和字体配置
 */
 @theme {
   /* 定义主色调 (提取自项目设置 #764ba2) */
@@ -10,56 +9,81 @@
   --color-exam-purple-light: #9b7bc4;
   --color-exam-bg: #f0f2f5;
 
+  /* 映射 Element Plus 的语义化颜色变量，以便在 Tailwind 中使用 text-primary 等 */
+  --color-primary: var(--el-color-primary);
+  --color-success: var(--el-color-success);
+  --color-warning: var(--el-color-warning);
+  --color-danger: var(--el-color-danger);
+  --color-info: var(--el-color-info);
+
   /* 统一字体配置 */
-  --font-sans: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --font-sans: "Inter", system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
-/* 强制安全列表 (Safelist) 配置
-  如果你的代码中有动态拼接的类名（如 :class="`bg-${status}-500`"），
-  Oxide 引擎可能无法检测到。你可以在这里使用 @source inline 强制生成这些类。
-  取消注释下方代码以启用：
+/* @layer base - 核心修复区
+  这里解决了 Tailwind v4 Preflight 与 Element Plus 的冲突
 */
-/* @source inline("bg-green-500", "bg-red-500", "text-blue-600"); */
+@layer base {
+  /* 修复: Tailwind v4 默认将按钮背景设为透明，导致 el-button 样式失效 */
+  .el-button {
+    background-color: var(--el-button-bg-color);
+  }
 
-/* 常规 CSS 变量设置
-  引用上面 @theme 定义的值，确保 Element Plus 和 Tailwind 使用同一套设计系统
-*/
+  /* 修复: 恢复按钮边框颜色 */
+  .el-button:not(.is-text):not(.is-link) {
+    border-color: var(--el-button-border-color);
+  }
+
+  /* 修复: 防止图片/SVG 默认 display: block 导致的图标布局错位 */
+  svg {
+    display: inline-block;
+  }
+
+  /* 全局基础设置 */
+  html, body, #app {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: var(--bg-color);
+    /* 确保文字颜色继承 Element Plus 变量 */
+    color: var(--el-text-color-primary, #303133);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: var(--font-sans);
+  }
+}
+
+/* 常规 CSS 变量设置 (Root) */
 :root {
-  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
 
   /* Element Plus 变量覆盖 - 引用 Tailwind 的主题色 */
   --el-color-primary: var(--color-exam-purple);
-  --el-color-primary-light-3: var(--color-exam-purple-light);
-  --el-color-primary-light-7: #d2c1e8;
+  /* 使用 color-mix 动态生成浅色变体，比硬编码 hex 值更灵活 */
+  --el-color-primary-light-3: color-mix(in srgb, var(--color-exam-purple), white 30%);
+  --el-color-primary-light-5: color-mix(in srgb, var(--color-exam-purple), white 50%);
+  --el-color-primary-light-7: color-mix(in srgb, var(--color-exam-purple), white 70%);
+  --el-color-primary-light-8: color-mix(in srgb, var(--color-exam-purple), white 80%);
+  --el-color-primary-light-9: color-mix(in srgb, var(--color-exam-purple), white 90%);
+  --el-color-primary-dark-2: color-mix(in srgb, var(--color-exam-purple), black 20%);
+
   --el-menu-bg-color: #001529;
 
   /* 全局背景色变量 */
   --bg-color: var(--color-exam-bg);
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  background-color: var(--bg-color);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
 #app {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
   max-width: none;
   text-align: left;
 }
 
-/* 滚动条美化 */
+/* 滚动条美化 (保留你的原配置) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

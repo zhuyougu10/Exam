@@ -3,37 +3,34 @@ import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import router from './router'
 
+// 1. Element Plus 全量引入
+// 注意：虽然 vite.config.ts 中配置了自动按需引入，但显式引入可以防止某些边缘情况下的样式丢失
 import ElementPlus from 'element-plus'
-// 1. 先引入 Element Plus 样式
 import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
-// 2. 后引入自定义样式（Tailwind），确保 Tailwind 的 Utility 类（如 mt-4）能覆盖组件库样式
+// 2. 自定义样式 (包含 Tailwind CSS v4 配置)
+// ⚠️ 务必放在 Element Plus 样式之后，确保 style.css 中的 @layer base 修复规则能正确生效
 import './style.css'
 
-// 引入路由守卫配置
-import './router/permission'
-
-// 导入根组件
+// 3. 引入业务逻辑
+import './router/permission' // 路由守卫 (登录鉴权)
 import App from './App.vue'
 
-// 创建 Pinia 实例
-const pinia = createPinia()
-// 使用 Pinia 持久化插件
-pinia.use(piniaPluginPersistedstate)
-
-// 创建 Vue 应用实例
 const app = createApp(App)
 
-// 注册 Element Plus 图标
+// 注册 Element Plus 所有图标
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
+// Pinia 配置 (带持久化)
+const pinia = createPinia()
+pinia.use(piniaPluginPersistedstate)
+
 // 注册插件
-app.use(router)
 app.use(pinia)
+app.use(router)
 app.use(ElementPlus)
 
-// 挂载应用
 app.mount('#app')
