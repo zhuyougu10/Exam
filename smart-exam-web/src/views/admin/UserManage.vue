@@ -84,6 +84,9 @@
             </div>
 
             <div class="filter-right">
+              <el-button type="warning" class="action-btn" @click="showImportDialog">
+                <el-icon class="mr-1"><Upload /></el-icon> 批量导入
+              </el-button>
               <el-button type="success" class="action-btn" @click="handleAdd">
                 <el-icon class="mr-1"><Plus /></el-icon> 新增用户
               </el-button>
@@ -274,6 +277,48 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 批量导入对话框 -->
+    <el-dialog v-model="importDialogVisible" title="批量导入用户" width="700px" destroy-on-close>
+      <el-alert type="info" :closable="false" show-icon class="mb-4">
+        <template #title>
+          导入说明：每行一个用户，格式为 <b>学号/用户名,姓名,角色(1学生/2教师)</b>，默认密码为 123456
+        </template>
+      </el-alert>
+      <el-form label-width="100px">
+        <el-form-item label="选择部门">
+          <el-tree-select
+            v-model="importDeptId"
+            :data="deptOptions"
+            :props="{ label: 'deptName', value: 'id', children: 'children' }"
+            placeholder="可选，导入用户的所属部门"
+            check-strictly
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="用户数据">
+          <el-input
+            v-model="importText"
+            type="textarea"
+            :rows="10"
+            placeholder="每行一个用户，格式：学号,姓名,角色&#10;例如：&#10;2024001,张三,1&#10;2024002,李四,1&#10;T001,王老师,2"
+          />
+        </el-form-item>
+      </el-form>
+      <div v-if="importResult" class="import-result">
+        <el-tag type="success">成功: {{ importResult.successCount }}</el-tag>
+        <el-tag type="warning" class="ml-2">跳过: {{ importResult.skipCount }}</el-tag>
+        <el-tag type="danger" class="ml-2">失败: {{ importResult.errorCount }}</el-tag>
+        <div v-if="importResult.errors?.length" class="error-list">
+          <div v-for="(err, i) in importResult.errors" :key="i" class="text-danger">{{ err }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importLoading" @click="handleImport">确认导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -281,7 +326,7 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
-import { Search, Plus, Refresh, EditPen, Delete, Key, Lock, OfficeBuilding, FolderOpened, Document } from '@element-plus/icons-vue'
+import { Search, Plus, Refresh, EditPen, Delete, Key, Lock, OfficeBuilding, FolderOpened, Document, Upload } from '@element-plus/icons-vue'
 
 // 数据定义
 const loading = ref(false)
@@ -501,6 +546,60 @@ const getDeptName = (deptId: number) => {
   }
   return findName(deptOptions.value, deptId) || '-'
 }
+
+// 批量导入相关
+const importDialogVisible = ref(false)
+const importLoading = ref(false)
+const importText = ref('')
+const importDeptId = ref<number | undefined>(undefined)
+const importResult = ref<any>(null)
+
+const showImportDialog = () => {
+  importText.value = ''
+  importDeptId.value = undefined
+  importResult.value = null
+  importDialogVisible.value = true
+}
+
+const handleImport = async () => {
+  if (!importText.value.trim()) {
+    ElMessage.warning('请输入用户数据')
+    return
+  }
+  
+  // 解析文本数据
+  const lines = importText.value.trim().split('\n')
+  const users: any[] = []
+  
+  for (const line of lines) {
+    const parts = line.split(',').map(s => s.trim())
+    if (parts.length >= 2) {
+      users.push({
+        username: parts[0],
+        realName: parts[1],
+        role: parts[2] ? parseInt(parts[2]) : 1,
+        deptId: importDeptId.value
+      })
+    }
+  }
+  
+  if (users.length === 0) {
+    ElMessage.warning('未解析到有效数据')
+    return
+  }
+  
+  importLoading.value = true
+  try {
+    const res: any = await request.post('/admin/user/batch-import', users)
+    importResult.value = res
+    ElMessage.success(res.message || `成功导入 ${res.successCount} 个用户`)
+    fetchData()
+  } catch (error) {
+    console.error(error)
+  } finally {
+    importLoading.value = false
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -645,6 +744,22 @@ const getDeptName = (deptId: number) => {
 }
 
 .mr-1 { margin-right: 4px; }
+.ml-2 { margin-left: 8px; }
+.mb-4 { margin-bottom: 16px; }
 .text-gray { color: #c0c4cc; }
+.text-danger { color: #f56c6c; font-size: 12px; }
 .w-full { width: 100%; }
+
+.import-result {
+  margin-top: 16px;
+  padding: 12px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  
+  .error-list {
+    margin-top: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+}
 </style>

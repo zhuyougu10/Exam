@@ -210,6 +210,72 @@ public class SysAdminController {
         return Result.success(response, "获取用户列表成功");
     }
 
+    /**
+     * 批量导入用户
+     * Excel格式：用户名(学号), 姓名, 角色(1-学生/2-教师), 部门ID(可选)
+     */
+    @PostMapping("/user/batch-import")
+    public Result<?> batchImportUsers(@RequestBody List<Map<String, Object>> users) {
+        if (users == null || users.isEmpty()) {
+            throw new BizException(400, "导入数据不能为空");
+        }
+        
+        Long currentUserId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        LocalDateTime now = LocalDateTime.now();
+        String defaultPassword = passwordEncoder.encode("123456");
+        
+        int successCount = 0;
+        int skipCount = 0;
+        List<String> errors = new ArrayList<>();
+        
+        for (int i = 0; i < users.size(); i++) {
+            Map<String, Object> row = users.get(i);
+            try {
+                String username = row.get("username") != null ? row.get("username").toString().trim() : null;
+                String realName = row.get("realName") != null ? row.get("realName").toString().trim() : null;
+                Integer role = row.get("role") != null ? Integer.valueOf(row.get("role").toString()) : 1;
+                Long deptId = row.get("deptId") != null ? Long.valueOf(row.get("deptId").toString()) : null;
+                
+                if (!StringUtils.hasText(username)) {
+                    errors.add("第" + (i + 1) + "行：用户名不能为空");
+                    continue;
+                }
+                
+                // 检查用户名是否已存在
+                User existing = userService.lambdaQuery().eq(User::getUsername, username).one();
+                if (existing != null) {
+                    skipCount++;
+                    continue;
+                }
+                
+                User user = new User();
+                user.setUsername(username);
+                user.setRealName(realName != null ? realName : username);
+                user.setPassword(defaultPassword);
+                user.setRole(role.byteValue());
+                user.setDeptId(deptId);
+                user.setStatus((byte) 1);
+                user.setCreateBy(currentUserId);
+                user.setCreateTime(now);
+                user.setUpdateBy(currentUserId);
+                user.setUpdateTime(now);
+                
+                userService.save(user);
+                successCount++;
+            } catch (Exception e) {
+                errors.add("第" + (i + 1) + "行：" + e.getMessage());
+            }
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("successCount", successCount);
+        result.put("skipCount", skipCount);
+        result.put("errorCount", errors.size());
+        result.put("errors", errors.size() > 10 ? errors.subList(0, 10) : errors);
+        
+        return Result.success(result, "成功导入 " + successCount + " 个用户，跳过 " + skipCount + " 个已存在用户");
+    }
+
     // ===================== 组织架构 =====================
 
     /**

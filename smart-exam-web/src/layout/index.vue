@@ -52,6 +52,10 @@
               <el-icon><DataAnalysis /></el-icon>
               <template #title>工作台</template>
             </el-menu-item>
+            <el-menu-item index="/teacher/course-manage">
+              <el-icon><Reading /></el-icon>
+              <template #title>课程管理</template>
+            </el-menu-item>
             <el-sub-menu index="teacher-resource">
               <template #title>
                 <el-icon><FolderOpened /></el-icon>
@@ -68,6 +72,7 @@
               <!-- 修改点：入口改为 PaperList，文案改为 试卷管理 -->
               <el-menu-item index="/teacher/paper-list">试卷管理</el-menu-item>
               <el-menu-item index="/teacher/exam-publish">考试发布</el-menu-item>
+              <el-menu-item index="/teacher/proctor">在线监考</el-menu-item>
               <el-menu-item index="/teacher/review-console">AI辅助阅卷</el-menu-item>
               <el-menu-item index="/teacher/analysis">成绩统计</el-menu-item>
             </el-sub-menu>
@@ -171,7 +176,7 @@ import { useUserStore } from '@/store/user'
 import Notification from '@/components/Notification/index.vue'
 import {
   Fold, Expand, User, DataAnalysis, Document, Collection,
-  UserFilled, FolderOpened, DocumentCopy,
+  UserFilled, FolderOpened, DocumentCopy, Reading,
   Setting, Management, Notebook, Cpu, FullScreen, CaretBottom, SwitchButton
 } from '@element-plus/icons-vue'
 

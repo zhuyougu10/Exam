@@ -205,8 +205,15 @@ export const asyncRoutes: AppRouteRecordRaw[] = [
         name: 'teacher-proctor',
         component: () => import('@/views/teacher/Proctor.vue'),
         meta: {
-          title: '在线监考',
-          hidden: true
+          title: '在线监考'
+        }
+      },
+      {
+        path: 'course-manage',
+        name: 'teacher-course-manage',
+        component: () => import('@/views/teacher/CourseManage.vue'),
+        meta: {
+          title: '课程管理'
         }
       }
     ]

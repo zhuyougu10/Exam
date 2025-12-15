@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/course/user")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole(3)") // 仅管理员可操作排课
+@PreAuthorize("hasAnyRole('2', '3')") // 教师和管理员
 public class CourseUserController {
 
     private final CourseUserService courseUserService;
@@ -45,6 +45,41 @@ public class CourseUserController {
     private final DeptService deptService;
     private final CourseService courseService;
     private final JwtUtils jwtUtils;
+
+    /**
+     * 搜索用户（按学号或姓名）
+     * 用于添加学生到课程
+     */
+    @GetMapping("/search-users")
+    public Result<?> searchUsers(@RequestParam String keyword,
+                                 @RequestParam(required = false) Integer role) {
+        if (keyword == null || keyword.length() < 2) {
+            return Result.success(new ArrayList<>());
+        }
+        
+        LambdaQueryWrapper<User> query = new LambdaQueryWrapper<User>()
+                .and(q -> q.like(User::getUsername, keyword)
+                        .or().like(User::getRealName, keyword));
+        
+        if (role != null) {
+            query.eq(User::getRole, role);
+        }
+        
+        query.last("LIMIT 20");
+        
+        List<User> users = userService.list(query);
+        
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (User u : users) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", u.getId());
+            item.put("username", u.getUsername());
+            item.put("realName", u.getRealName());
+            result.add(item);
+        }
+        
+        return Result.success(result);
+    }
 
     /**
      * 获取当前用户已加入的课程列表
@@ -126,13 +161,41 @@ public class CourseUserController {
     }
 
     /**
+     * 获取课程的所有学期列表
+     */
+    @GetMapping("/semesters")
+    public Result<?> getCourseSemesters(@RequestParam Long courseId) {
+        List<String> semesters = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
+                .eq(CourseUser::getCourseId, courseId)
+                .select(CourseUser::getSemester))
+                .stream()
+                .map(CourseUser::getSemester)
+                .filter(s -> s != null && !s.isEmpty())
+                .distinct()
+                .sorted((a, b) -> b.compareTo(a)) // 降序排列，最新学期在前
+                .toList();
+        
+        // 确保当前学期在列表中
+        String currentSemester = getCurrentSemester();
+        if (!semesters.contains(currentSemester)) {
+            List<String> result = new ArrayList<>();
+            result.add(currentSemester);
+            result.addAll(semesters);
+            return Result.success(result);
+        }
+        return Result.success(semesters);
+    }
+
+    /**
      * 获取某门课程的成员列表
      * @param courseId 课程ID
      * @param role 角色 (1-学生, 2-教师, 不传查所有)
+     * @param semester 学期筛选
      */
     @GetMapping("/list")
     public Result<?> getCourseMembers(@RequestParam Long courseId,
                                       @RequestParam(required = false) Integer role,
+                                      @RequestParam(required = false) String semester,
                                       @RequestParam(defaultValue = "1") Integer page,
                                       @RequestParam(defaultValue = "100") Integer size) {
         
@@ -143,16 +206,32 @@ public class CourseUserController {
         if (role != null) {
             query.eq(CourseUser::getRole, role);
         }
+        if (semester != null && !semester.isEmpty()) {
+            query.eq(CourseUser::getSemester, semester);
+        }
         query.orderByDesc(CourseUser::getCreateTime);
 
         Page<CourseUser> result = courseUserService.page(pageParam, query);
 
-        // 填充用户详情
+        // 填充用户详情和部门信息
         List<Map<String, Object>> records = new ArrayList<>();
         if (!result.getRecords().isEmpty()) {
             List<Long> userIds = result.getRecords().stream().map(CourseUser::getUserId).toList();
-            Map<Long, User> userMap = userService.listByIds(userIds).stream()
+            List<User> users = userService.listByIds(userIds);
+            Map<Long, User> userMap = users.stream()
                     .collect(Collectors.toMap(User::getId, u -> u));
+            
+            // 获取所有部门信息
+            List<Long> deptIds = users.stream()
+                    .map(User::getDeptId)
+                    .filter(id -> id != null)
+                    .distinct()
+                    .toList();
+            Map<Long, Dept> deptMap = new HashMap<>();
+            if (!deptIds.isEmpty()) {
+                deptMap = deptService.listByIds(deptIds).stream()
+                        .collect(Collectors.toMap(Dept::getId, d -> d));
+            }
 
             for (CourseUser cu : result.getRecords()) {
                 Map<String, Object> record = new HashMap<>();
@@ -168,6 +247,10 @@ public class CourseUserController {
                     record.put("username", u.getUsername());
                     record.put("realName", u.getRealName());
                     record.put("avatar", u.getAvatar());
+                    record.put("deptId", u.getDeptId());
+                    
+                    Dept dept = deptMap.get(u.getDeptId());
+                    record.put("deptName", dept != null ? dept.getDeptName() : "未分配班级");
                 }
                 records.add(record);
             }
@@ -185,18 +268,19 @@ public class CourseUserController {
      */
     @PostMapping("/add")
     public Result<?> addMember(@RequestBody CourseUser courseUser) {
-        // 查重
-        long count = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
-                .eq(CourseUser::getCourseId, courseUser.getCourseId())
-                .eq(CourseUser::getUserId, courseUser.getUserId()));
-        
-        if (count > 0) {
-            throw new BizException(400, "该用户已在课程中");
-        }
-        
         // 设置默认学期
         if (courseUser.getSemester() == null || courseUser.getSemester().isEmpty()) {
             courseUser.setSemester(getCurrentSemester());
+        }
+        
+        // 查重（唯一约束：course_id + user_id + semester）
+        long count = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
+                .eq(CourseUser::getCourseId, courseUser.getCourseId())
+                .eq(CourseUser::getUserId, courseUser.getUserId())
+                .eq(CourseUser::getSemester, courseUser.getSemester()));
+        
+        if (count > 0) {
+            throw new BizException(400, "该用户在本学期已在课程中");
         }
         
         courseUserService.save(courseUser);
@@ -209,12 +293,18 @@ public class CourseUserController {
      */
     @PostMapping("/import-dept")
     @Transactional(rollbackFor = Exception.class)
-    public Result<?> importFromDept(@RequestBody Map<String, Long> params) {
-        Long courseId = params.get("courseId");
-        Long deptId = params.get("deptId");
+    public Result<?> importFromDept(@RequestBody Map<String, Object> params) {
+        Long courseId = params.get("courseId") != null ? Long.valueOf(params.get("courseId").toString()) : null;
+        Long deptId = params.get("deptId") != null ? Long.valueOf(params.get("deptId").toString()) : null;
+        String semester = params.get("semester") != null ? params.get("semester").toString() : null;
         
         if (courseId == null || deptId == null) {
             throw new BizException(400, "参数错误");
+        }
+        
+        // 如果没有指定学期，使用当前学期
+        if (semester == null || semester.isEmpty()) {
+            semester = getCurrentSemester();
         }
 
         // 1. 获取该部门及其所有子部门的ID列表
@@ -231,13 +321,14 @@ public class CourseUserController {
             return Result.success(0, "该部门及其子部门下暂无学生");
         }
 
-        // 3. 查找该课程已有的学生ID，避免重复
+        // 3. 查找该课程该学期已有的学生ID，避免重复（唯一约束：course_id + user_id + semester）
         List<Long> existingUserIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
-                .eq(CourseUser::getCourseId, courseId))
+                .eq(CourseUser::getCourseId, courseId)
+                .eq(CourseUser::getSemester, semester))
                 .stream().map(CourseUser::getUserId).toList();
 
         // 4. 过滤出需要新增的学生
-        String semester = getCurrentSemester();
+        final String finalSemester = semester;
         List<CourseUser> toAdd = new ArrayList<>();
         for (User stu : students) {
             if (!existingUserIds.contains(stu.getId())) {
@@ -245,7 +336,7 @@ public class CourseUserController {
                 cu.setCourseId(courseId);
                 cu.setUserId(stu.getId());
                 cu.setRole((byte) 1); // sys_course_user.role=1 表示学生
-                cu.setSemester(semester);
+                cu.setSemester(finalSemester);
                 toAdd.add(cu);
             }
         }

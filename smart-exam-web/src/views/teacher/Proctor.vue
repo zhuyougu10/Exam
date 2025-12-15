@@ -1,71 +1,132 @@
 <template>
-  <div class="app-container p-6 bg-gray-50 min-h-[calc(100vh-64px)]">
+  <div class="proctor-container">
     <!-- 顶部信息栏 -->
-    <el-card shadow="never" class="border-0 rounded-xl mb-4">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
-          <div class="p-2 bg-red-100 rounded-lg text-red-600">
+    <el-card shadow="never" class="header-card">
+      <div class="header-content">
+        <div class="header-left">
+          <div class="header-icon">
             <el-icon size="20"><Monitor /></el-icon>
           </div>
           <div>
-            <h2 class="text-lg font-bold text-gray-800">在线监考</h2>
-            <p class="text-xs text-gray-500">实时监控考试状态，及时处理异常情况</p>
+            <h2 class="header-title">在线监考</h2>
+            <p class="header-subtitle">{{ publishId ? '实时监控考试状态，及时处理异常情况' : '选择进行中的考试进入监考' }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-4">
-          <el-tag :type="wsConnected ? 'success' : 'danger'" effect="dark" round>
-            <el-icon class="mr-1"><Connection /></el-icon>
-            {{ wsConnected ? '已连接' : '未连接' }}
-          </el-tag>
-          <el-button :icon="Refresh" circle @click="refreshData" />
-          <el-button type="primary" plain @click="router.back()">
-            <el-icon class="mr-1"><Back /></el-icon>返回
-          </el-button>
+        <div class="header-right">
+          <template v-if="publishId">
+            <el-tag :type="wsConnected ? 'success' : 'danger'" effect="dark" round>
+              <el-icon class="icon-margin-right"><Connection /></el-icon>
+              {{ wsConnected ? '已连接' : '未连接' }}
+            </el-tag>
+            <el-button :icon="Refresh" circle @click="refreshData" />
+            <el-button type="primary" plain @click="exitProctor">
+              <el-icon class="icon-margin-right"><Back /></el-icon>返回列表
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button :icon="Refresh" circle @click="fetchExamList" />
+          </template>
         </div>
       </div>
     </el-card>
 
+    <!-- 考试选择列表 -->
+    <template v-if="!publishId">
+      <el-card shadow="never" class="content-card">
+        <template #header>
+          <div class="card-header">
+            <span class="card-title">进行中的考试</span>
+            <el-tag type="info" size="small">{{ examList.length }} 场考试</el-tag>
+          </div>
+        </template>
+        <div v-if="examListLoading" class="empty-log">
+          <el-icon class="is-loading"><Refresh /></el-icon> 加载中...
+        </div>
+        <div v-else-if="examList.length === 0" class="empty-log">
+          暂无进行中的考试
+        </div>
+        <div v-else class="exam-list">
+          <div
+            v-for="exam in examList"
+            :key="exam.id"
+            class="exam-item"
+            @click="enterProctor(exam.id)"
+          >
+            <div class="exam-info">
+              <div class="exam-title">{{ exam.title }}</div>
+              <div class="exam-meta">
+                <span>{{ exam.paperTitle }}</span>
+                <span class="exam-separator">|</span>
+                <span>{{ exam.className }}</span>
+              </div>
+            </div>
+            <div class="exam-stats">
+              <div class="exam-stat">
+                <span class="exam-stat-value">{{ exam.totalCount || 0 }}</span>
+                <span class="exam-stat-label">总人数</span>
+              </div>
+              <div class="exam-stat">
+                <span class="exam-stat-value stat-green">{{ exam.inProgressCount || 0 }}</span>
+                <span class="exam-stat-label">答题中</span>
+              </div>
+              <div class="exam-stat">
+                <span class="exam-stat-value stat-gray">{{ exam.submittedCount || 0 }}</span>
+                <span class="exam-stat-label">已交卷</span>
+              </div>
+            </div>
+            <div class="exam-time">
+              <div>{{ formatTime(exam.startTime) }}</div>
+              <div>至 {{ formatTime(exam.endTime) }}</div>
+            </div>
+            <el-button type="primary" size="small">进入监考</el-button>
+          </div>
+        </div>
+      </el-card>
+    </template>
+
+    <!-- 监考界面 -->
+    <template v-else>
     <!-- 统计卡片 -->
-    <div class="grid grid-cols-5 gap-4 mb-4">
-      <el-card shadow="never" class="border-0 rounded-xl">
-        <div class="text-center">
-          <div class="text-3xl font-bold text-blue-600">{{ stats.total }}</div>
-          <div class="text-sm text-gray-500 mt-1">总人数</div>
+    <div class="stats-grid">
+      <el-card shadow="never" class="stat-card">
+        <div class="stat-content">
+          <div class="stat-value stat-blue">{{ stats.total }}</div>
+          <div class="stat-label">总人数</div>
         </div>
       </el-card>
-      <el-card shadow="never" class="border-0 rounded-xl">
-        <div class="text-center">
-          <div class="text-3xl font-bold text-green-600">{{ stats.inProgress }}</div>
-          <div class="text-sm text-gray-500 mt-1">答题中</div>
+      <el-card shadow="never" class="stat-card">
+        <div class="stat-content">
+          <div class="stat-value stat-green">{{ stats.inProgress }}</div>
+          <div class="stat-label">答题中</div>
         </div>
       </el-card>
-      <el-card shadow="never" class="border-0 rounded-xl">
-        <div class="text-center">
-          <div class="text-3xl font-bold text-gray-600">{{ stats.submitted }}</div>
-          <div class="text-sm text-gray-500 mt-1">已交卷</div>
+      <el-card shadow="never" class="stat-card">
+        <div class="stat-content">
+          <div class="stat-value stat-gray">{{ stats.submitted }}</div>
+          <div class="stat-label">已交卷</div>
         </div>
       </el-card>
-      <el-card shadow="never" class="border-0 rounded-xl">
-        <div class="text-center">
-          <div class="text-3xl font-bold text-orange-600">{{ stats.notStarted }}</div>
-          <div class="text-sm text-gray-500 mt-1">未开始</div>
+      <el-card shadow="never" class="stat-card">
+        <div class="stat-content">
+          <div class="stat-value stat-orange">{{ stats.notStarted }}</div>
+          <div class="stat-label">未开始</div>
         </div>
       </el-card>
-      <el-card shadow="never" class="border-0 rounded-xl">
-        <div class="text-center">
-          <div class="text-3xl font-bold text-red-600">{{ stats.totalWarnings }}</div>
-          <div class="text-sm text-gray-500 mt-1">异常警告</div>
+      <el-card shadow="never" class="stat-card">
+        <div class="stat-content">
+          <div class="stat-value stat-red">{{ stats.totalWarnings }}</div>
+          <div class="stat-label">异常警告</div>
         </div>
       </el-card>
     </div>
 
     <!-- 主内容区 -->
-    <div class="grid grid-cols-3 gap-4">
+    <div class="main-grid">
       <!-- 学生列表 -->
-      <el-card shadow="never" class="border-0 rounded-xl col-span-2">
+      <el-card shadow="never" class="content-card student-card">
         <template #header>
-          <div class="flex justify-between items-center">
-            <span class="font-bold">考生状态</span>
+          <div class="card-header">
+            <span class="card-title">考生状态</span>
             <el-input
               v-model="searchKeyword"
               placeholder="搜索学生姓名"
@@ -111,48 +172,49 @@
       </el-card>
 
       <!-- 实时日志 -->
-      <el-card shadow="never" class="border-0 rounded-xl">
+      <el-card shadow="never" class="content-card log-card">
         <template #header>
-          <div class="flex justify-between items-center">
-            <span class="font-bold">
-              <el-icon class="text-red-500 mr-1"><Bell /></el-icon>
+          <div class="card-header">
+            <span class="card-title">
+              <el-icon class="bell-icon"><Bell /></el-icon>
               实时警告
             </span>
             <el-badge :value="realtimeLogs.length" :max="99" type="danger" />
           </div>
         </template>
         <div class="log-container" ref="logContainer">
-          <div v-if="realtimeLogs.length === 0" class="text-center text-gray-400 py-10">
+          <div v-if="realtimeLogs.length === 0" class="empty-log">
             暂无异常记录
           </div>
           <div
             v-for="log in realtimeLogs"
             :key="log.id"
-            class="log-item p-3 mb-2 rounded-lg border-l-4"
+            class="log-item"
             :class="getLogClass(log.actionType)"
           >
-            <div class="flex justify-between items-start">
+            <div class="log-header">
               <div>
-                <span class="font-medium text-gray-800">{{ log.studentName }}</span>
-                <el-tag :type="getLogTagType(log.actionType)" size="small" class="ml-2">
+                <span class="log-student-name">{{ log.studentName }}</span>
+                <el-tag :type="getLogTagType(log.actionType)" size="small" class="log-tag">
                   {{ log.actionLabel }}
                 </el-tag>
               </div>
-              <span class="text-xs text-gray-400">{{ formatTime(log.happenTime) }}</span>
+              <span class="log-time">{{ formatTime(log.happenTime) }}</span>
             </div>
-            <div v-if="log.content" class="text-sm text-gray-600 mt-1">{{ log.content }}</div>
-            <div v-if="log.imgSnapshot" class="mt-2">
+            <div v-if="log.content" class="log-content">{{ log.content }}</div>
+            <div v-if="log.imgSnapshot" class="log-snapshot">
               <el-image
                 :src="log.imgSnapshot"
                 :preview-src-list="[log.imgSnapshot]"
                 fit="cover"
-                class="w-20 h-20 rounded cursor-pointer"
+                class="snapshot-image"
               />
             </div>
           </div>
         </div>
       </el-card>
     </div>
+    </template>
 
     <!-- 学生日志详情弹窗 -->
     <el-dialog v-model="logDialogVisible" :title="`${selectedStudent?.studentName} 的监考日志`" width="600px">
@@ -175,9 +237,9 @@
               :src="row.imgSnapshot"
               :preview-src-list="[row.imgSnapshot]"
               fit="cover"
-              class="w-12 h-12 rounded cursor-pointer"
+              class="dialog-snapshot"
             />
-            <span v-else class="text-gray-400">-</span>
+            <span v-else class="no-snapshot">-</span>
           </template>
         </el-table-column>
       </el-table>
@@ -204,6 +266,9 @@ const selectedStudent = ref<any>(null)
 const studentLogs = ref<any[]>([])
 const logContainer = ref<HTMLElement | null>(null)
 
+const examList = ref<any[]>([])
+const examListLoading = ref(false)
+
 let ws: WebSocket | null = null
 let heartbeatTimer: number | null = null
 let statsPollingTimer: number | null = null
@@ -229,17 +294,47 @@ const filteredStudents = computed(() => {
 
 onMounted(() => {
   const pid = route.query.publishId
-  if (!pid) {
-    ElMessage.error('缺少考试ID参数')
-    router.back()
-    return
+  if (pid) {
+    publishId.value = Number(pid)
+    refreshData()
+    connectWebSocket()
+    startStatsPolling()
+  } else {
+    fetchExamList()
   }
-  publishId.value = Number(pid)
-  
+})
+
+const fetchExamList = async () => {
+  examListLoading.value = true
+  try {
+    const res: any = await request.get('/exam/publish/list', {
+      params: { status: 1 }
+    })
+    examList.value = res?.records || res || []
+  } catch (error) {
+    console.error('获取考试列表失败', error)
+    examList.value = []
+  } finally {
+    examListLoading.value = false
+  }
+}
+
+const enterProctor = (id: number) => {
+  publishId.value = id
   refreshData()
   connectWebSocket()
   startStatsPolling()
-})
+}
+
+const exitProctor = () => {
+  disconnectWebSocket()
+  stopStatsPolling()
+  publishId.value = 0
+  Object.assign(stats, { total: 0, inProgress: 0, submitted: 0, notStarted: 0, totalWarnings: 0, proctorCount: 0 })
+  students.value = []
+  realtimeLogs.value = []
+  fetchExamList()
+}
 
 onUnmounted(() => {
   disconnectWebSocket()
@@ -475,10 +570,10 @@ const tableRowClassName = ({ row }: { row: any }) => {
 
 const getLogClass = (actionType: string) => {
   switch (actionType) {
-    case 'switch_screen': return 'border-orange-500 bg-orange-50'
-    case 'leave_page': return 'border-red-500 bg-red-50'
-    case 'env_abnormal': return 'border-purple-500 bg-purple-50'
-    default: return 'border-gray-300 bg-gray-50'
+    case 'switch_screen': return 'log-switch-screen'
+    case 'leave_page': return 'log-leave-page'
+    case 'env_abnormal': return 'log-env-abnormal'
+    default: return 'log-default'
   }
 }
 
@@ -494,12 +589,213 @@ const getLogTagType = (actionType: string) => {
 </script>
 
 <style scoped>
+/* 容器 */
+.proctor-container {
+  padding: 24px;
+  background-color: #f9fafb;
+  min-height: calc(100vh - 64px);
+}
+
+/* 顶部信息栏 */
+.header-card {
+  border: none;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-icon {
+  padding: 8px;
+  background-color: #fee2e2;
+  border-radius: 8px;
+  color: #dc2626;
+}
+
+.header-title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #1f2937;
+  margin: 0;
+}
+
+.header-subtitle {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.icon-margin-right {
+  margin-right: 4px;
+}
+
+/* 统计卡片网格 */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  border: none;
+  border-radius: 12px;
+}
+
+.stat-content {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 30px;
+  font-weight: bold;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.stat-blue { color: #2563eb; }
+.stat-green { color: #16a34a; }
+.stat-gray { color: #4b5563; }
+.stat-orange { color: #ea580c; }
+.stat-red { color: #dc2626; }
+
+/* 主内容网格 */
+.main-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+
+.content-card {
+  border: none;
+  border-radius: 12px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-title {
+  font-weight: bold;
+}
+
+.bell-icon {
+  color: #ef4444;
+  margin-right: 4px;
+}
+
+/* 考试列表 */
+.exam-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.exam-item {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.exam-item:hover {
+  background-color: #eff6ff;
+  transform: translateX(4px);
+}
+
+.exam-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.exam-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.exam-meta {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.exam-separator {
+  margin: 0 8px;
+  color: #d1d5db;
+}
+
+.exam-stats {
+  display: flex;
+  gap: 24px;
+}
+
+.exam-stat {
+  text-align: center;
+}
+
+.exam-stat-value {
+  display: block;
+  font-size: 20px;
+  font-weight: bold;
+  color: #1f2937;
+}
+
+.exam-stat-label {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.exam-time {
+  font-size: 12px;
+  color: #6b7280;
+  text-align: right;
+  min-width: 140px;
+}
+
+/* 日志容器 */
 .log-container {
   max-height: 500px;
   overflow-y: auto;
 }
 
+.empty-log {
+  text-align: center;
+  color: #9ca3af;
+  padding: 40px 0;
+}
+
 .log-item {
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border-left: 4px solid;
   transition: all 0.3s;
 }
 
@@ -507,6 +803,75 @@ const getLogTagType = (actionType: string) => {
   transform: translateX(4px);
 }
 
+.log-switch-screen {
+  border-left-color: #f97316;
+  background-color: #fff7ed;
+}
+
+.log-leave-page {
+  border-left-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.log-env-abnormal {
+  border-left-color: #a855f7;
+  background-color: #faf5ff;
+}
+
+.log-default {
+  border-left-color: #d1d5db;
+  background-color: #f9fafb;
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.log-student-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.log-tag {
+  margin-left: 8px;
+}
+
+.log-time {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.log-content {
+  font-size: 14px;
+  color: #4b5563;
+  margin-top: 4px;
+}
+
+.log-snapshot {
+  margin-top: 8px;
+}
+
+.snapshot-image {
+  width: 80px;
+  height: 80px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dialog-snapshot {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.no-snapshot {
+  color: #9ca3af;
+}
+
+/* 表格警告行 */
 :deep(.warning-row) {
   background-color: #fff7ed !important;
 }
@@ -517,5 +882,32 @@ const getLogTagType = (actionType: string) => {
 
 :deep(.warning-row-high td) {
   color: #dc2626;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .header-content {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .header-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

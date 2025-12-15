@@ -51,9 +51,11 @@ public class ReviewController {
     private final CourseUserService courseUserService;
     private final DeptService deptService;
     private final CourseService courseService;
+    private final PublishService publishService;
 
     /**
      * 获取待阅试卷列表 (含统计信息)
+     * 教师只能看到自己发布的考试
      * GET /api/review/papers
      */
     @GetMapping("/papers")
@@ -61,35 +63,37 @@ public class ReviewController {
         Long currentUserId = getCurrentUserId();
         Integer role = getCurrentUserRole();
 
-        // 1. 获取教师负责的课程
-        List<Long> courseIds = new ArrayList<>();
-        if (role == 2) {
-            courseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
-                            .eq(CourseUser::getUserId, currentUserId)
-                            .eq(CourseUser::getRole, 2))
-                    .stream().map(CourseUser::getCourseId).collect(Collectors.toList());
-            
-            if (courseIds.isEmpty()) {
-                return Result.success(new ArrayList<>());
-            }
+        // 1. 获取当前用户发布的考试
+        List<Publish> myPublishes;
+        if (role == 3) {
+            // 管理员可以看到所有发布的考试
+            myPublishes = publishService.list(new LambdaQueryWrapper<Publish>()
+                    .orderByDesc(Publish::getCreateTime));
+        } else {
+            // 教师只能看到自己发布的考试
+            myPublishes = publishService.list(new LambdaQueryWrapper<Publish>()
+                    .eq(Publish::getCreateBy, currentUserId)
+                    .orderByDesc(Publish::getCreateTime));
         }
 
-        // 2. 查询相关试卷
-        LambdaQueryWrapper<Paper> paperQuery = new LambdaQueryWrapper<>();
-        if (!courseIds.isEmpty()) {
-            paperQuery.in(Paper::getCourseId, courseIds);
-        }
-        paperQuery.orderByDesc(Paper::getCreateTime);
-        List<Paper> papers = paperService.list(paperQuery);
-
-        if (papers.isEmpty()) {
+        if (myPublishes.isEmpty()) {
             return Result.success(new ArrayList<>());
         }
 
-        // 3. 准备统计数据 (查询所有相关记录进行内存聚合，避免N+1查询)
-        List<Long> paperIds = papers.stream().map(Paper::getId).collect(Collectors.toList());
+        // 2. 获取这些发布对应的试卷ID和发布ID
+        List<Long> publishIds = myPublishes.stream().map(Publish::getId).collect(Collectors.toList());
+        List<Long> paperIds = myPublishes.stream().map(Publish::getPaperId).distinct().collect(Collectors.toList());
+
+        // 3. 查询试卷信息
+        List<Paper> papers = paperService.listByIds(paperIds);
+        if (papers.isEmpty()) {
+            return Result.success(new ArrayList<>());
+        }
+        Map<Long, Paper> paperMap = papers.stream().collect(Collectors.toMap(Paper::getId, p -> p));
+
+        // 4. 准备统计数据 (只统计当前用户发布的考试记录)
         List<Record> records = recordService.list(new LambdaQueryWrapper<Record>()
-                .in(Record::getPaperId, paperIds)
+                .in(Record::getPublishId, publishIds)
                 .in(Record::getStatus, 2, 3)); // 只关注已交卷(2)和已完成(3)
 
         // 分组统计：Map<PaperId, Map<Status, Count>>
@@ -130,6 +134,7 @@ public class ReviewController {
 
     /**
      * 获取考生列表
+     * 教师只能查看自己发布的考试的考生
      * GET /api/review/list
      */
     @GetMapping("/list")
@@ -140,33 +145,37 @@ public class ReviewController {
                              @RequestParam(required = false) String studentName,
                              @RequestParam(required = false) Integer status) {
         
+        Long currentUserId = getCurrentUserId();
+        Integer role = getCurrentUserRole();
+        
         // 构建查询条件
         LambdaQueryWrapper<Record> recordQuery = new LambdaQueryWrapper<>();
         
-        // 1. 试卷/课程筛选
+        // 1. 获取当前用户发布的考试ID列表
+        List<Long> myPublishIds;
+        if (role == 3) {
+            // 管理员可以看所有
+            myPublishIds = null;
+        } else {
+            // 教师只能看自己发布的考试
+            List<Publish> myPublishes = publishService.list(new LambdaQueryWrapper<Publish>()
+                    .eq(Publish::getCreateBy, currentUserId));
+            if (myPublishes.isEmpty()) {
+                return Result.success(new Page<ReviewListResp>());
+            }
+            myPublishIds = myPublishes.stream().map(Publish::getId).toList();
+        }
+        
+        // 2. 试卷筛选
         if (paperId != null) {
             recordQuery.eq(Record::getPaperId, paperId);
-        } else if (courseId != null) {
-            List<Paper> coursePapers = paperService.list(new LambdaQueryWrapper<Paper>().eq(Paper::getCourseId, courseId));
-            if (coursePapers.isEmpty()) return Result.success(new Page<ReviewListResp>());
-            recordQuery.in(Record::getPaperId, coursePapers.stream().map(Paper::getId).toList());
-        } else {
-            if (getCurrentUserRole() == 2) {
-                Long currentUserId = getCurrentUserId();
-                List<Long> myCourseIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
-                        .eq(CourseUser::getUserId, currentUserId)
-                        .eq(CourseUser::getRole, 2))
-                        .stream().map(CourseUser::getCourseId).toList();
-                
-                if (myCourseIds.isEmpty()) return Result.success(new Page<ReviewListResp>());
-                
-                List<Paper> myPapers = paperService.list(new LambdaQueryWrapper<Paper>().in(Paper::getCourseId, myCourseIds));
-                if (myPapers.isEmpty()) return Result.success(new Page<ReviewListResp>());
-                
-                recordQuery.in(Record::getPaperId, myPapers.stream().map(Paper::getId).toList());
-            }
         }
-
+        
+        // 3. 限制只能查看自己发布的考试记录
+        if (myPublishIds != null) {
+            recordQuery.in(Record::getPublishId, myPublishIds);
+        }
+        
         // 2. 状态筛选
         if (status != null) {
             recordQuery.eq(Record::getStatus, status);
@@ -383,14 +392,10 @@ public class ReviewController {
         Integer role = getCurrentUserRole();
         if (role == 3) return; // 管理员通行
 
-        Paper paper = paperService.getById(record.getPaperId());
-        long count = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
-                .eq(CourseUser::getUserId, userId)
-                .eq(CourseUser::getCourseId, paper.getCourseId())
-                .eq(CourseUser::getRole, 2));
-        
-        if (count == 0 && !paper.getCreateBy().equals(userId)) {
-            throw new BizException(403, "无权操作非本人负责课程的试卷");
+        // 检查该记录对应的考试是否由当前用户发布
+        Publish publish = publishService.getById(record.getPublishId());
+        if (publish == null || !publish.getCreateBy().equals(userId)) {
+            throw new BizException(403, "无权操作非本人发布的考试");
         }
     }
 

@@ -8,9 +8,11 @@ import com.university.exam.common.result.Result;
 import com.university.exam.entity.CourseUser;
 import com.university.exam.entity.Paper;
 import com.university.exam.entity.Publish;
+import com.university.exam.entity.Record;
 import com.university.exam.service.CourseUserService;
 import com.university.exam.service.PaperService;
 import com.university.exam.service.PublishService;
+import com.university.exam.service.RecordService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -37,6 +39,7 @@ public class ExamPublishController {
     private final PublishService publishService;
     private final PaperService paperService;
     private final CourseUserService courseUserService;
+    private final RecordService recordService;
 
     /**
      * 发布考试
@@ -67,19 +70,23 @@ public class ExamPublishController {
     }
 
     /**
-     * 获取发布列表
+     * 获取发布列表（含统计数据）
      * GET /api/exam/publish/list
      */
     @GetMapping("/list")
     public Result<?> getList(@RequestParam(defaultValue = "1") Integer page,
                              @RequestParam(defaultValue = "10") Integer size,
-                             @RequestParam(required = false) Long paperId) {
+                             @RequestParam(required = false) Long paperId,
+                             @RequestParam(required = false) Integer status) {
         Long userId = getCurrentUserId();
         Integer role = getCurrentUserRole();
 
         LambdaQueryWrapper<Publish> query = new LambdaQueryWrapper<>();
         if (paperId != null) {
             query.eq(Publish::getPaperId, paperId);
+        }
+        if (status != null) {
+            query.eq(Publish::getStatus, status);
         }
 
         // 教师只能看自己发布的
@@ -89,7 +96,54 @@ public class ExamPublishController {
 
         query.orderByDesc(Publish::getCreateTime);
         IPage<Publish> result = publishService.page(new Page<>(page, size), query);
-        return Result.success(result);
+        
+        // 获取所有publishId
+        List<Long> publishIds = result.getRecords().stream().map(Publish::getId).toList();
+        if (publishIds.isEmpty()) {
+            return Result.success(result);
+        }
+        
+        // 查询所有相关记录
+        List<Record> records = recordService.list(new LambdaQueryWrapper<Record>()
+                .in(Record::getPublishId, publishIds));
+        
+        // 按publishId分组统计
+        Map<Long, List<Record>> recordMap = records.stream()
+                .collect(Collectors.groupingBy(Record::getPublishId));
+        
+        // 获取试卷标题
+        List<Long> paperIds = result.getRecords().stream().map(Publish::getPaperId).distinct().toList();
+        Map<Long, String> paperTitleMap = paperService.listByIds(paperIds).stream()
+                .collect(Collectors.toMap(Paper::getId, Paper::getTitle));
+        
+        // 组装返回数据
+        List<Map<String, Object>> voList = result.getRecords().stream().map(p -> {
+            List<Record> pRecords = recordMap.getOrDefault(p.getId(), List.of());
+            long totalCount = pRecords.size();
+            long inProgressCount = pRecords.stream().filter(r -> r.getStatus() == 1).count();
+            long submittedCount = pRecords.stream().filter(r -> r.getStatus() >= 2).count();
+            
+            Map<String, Object> vo = new java.util.HashMap<>();
+            vo.put("id", p.getId());
+            vo.put("title", p.getTitle());
+            vo.put("paperId", p.getPaperId());
+            vo.put("paperTitle", paperTitleMap.getOrDefault(p.getPaperId(), ""));
+            vo.put("startTime", p.getStartTime());
+            vo.put("endTime", p.getEndTime());
+            vo.put("status", p.getStatus());
+            vo.put("totalCount", totalCount);
+            vo.put("inProgressCount", inProgressCount);
+            vo.put("submittedCount", submittedCount);
+            return vo;
+        }).toList();
+        
+        Map<String, Object> pageResult = new java.util.HashMap<>();
+        pageResult.put("records", voList);
+        pageResult.put("total", result.getTotal());
+        pageResult.put("current", result.getCurrent());
+        pageResult.put("size", result.getSize());
+        
+        return Result.success(pageResult);
     }
 
     /**
