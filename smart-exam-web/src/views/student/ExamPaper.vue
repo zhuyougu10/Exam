@@ -1,5 +1,11 @@
 <template>
-  <div class="exam-app-container">
+  <div
+      class="exam-app-container"
+      @contextmenu.prevent
+      @copy.prevent
+      @paste.prevent
+      @cut.prevent
+  >
 
     <!-- 全屏检测遮罩 -->
     <div v-if="!isFullscreen && !isSubmitting" class="fullscreen-mask">
@@ -584,6 +590,12 @@ onUnmounted(() => {
   color: #1a202c;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   overflow: hidden;
+
+  /* CSS 新增：禁止文本选择，配合禁用右键使用 */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 /* ---------------- HEADER ---------------- */

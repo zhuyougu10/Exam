@@ -178,11 +178,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus' // 引入 ElMessageBox
 import {
   Refresh, Calendar, Timer, RefreshLeft, Right, Clock,
   VideoPlay, CircleCheck, Lock, Reading
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import dayjs from 'dayjs'
 
@@ -195,6 +195,14 @@ const examList = ref<any[]>([])
 const noticeDialogVisible = ref(false)
 const currentExam = ref<any>(null)
 const isRead = ref(false)
+
+// ---------------- 新增：检测 IE 浏览器 ----------------
+const isIEBrowser = () => {
+  const ua = window.navigator.userAgent
+  // MSIE: IE 10 及以下
+  // Trident: IE 11
+  return ua.indexOf('MSIE ') > -1 || ua.indexOf('Trident/') > -1
+}
 
 // 获取数据
 const fetchData = async () => {
@@ -226,8 +234,24 @@ const handleTabChange = () => {
   // 可以在这里重新请求后端带状态的接口，目前采用前端过滤
 }
 
-// 点击进入考试按钮 -> 弹出须知
+// 点击进入考试按钮 -> 检测 IE -> 弹出须知
 const handleEnterExam = (exam: any) => {
+  // 1. IE 检测逻辑
+  if (isIEBrowser()) {
+    ElMessageBox.alert(
+        '本考试系统基于最新 Web 技术构建，不支持 Internet Explorer (IE) 浏览器。<br/><br/>为了确保考试顺利进行，请使用 <b>Chrome (谷歌)</b>、<b>Edge</b> 或 <b>Firefox</b> 浏览器重新登录系统。',
+        '浏览器不受支持',
+        {
+          confirmButtonText: '知道了',
+          type: 'error',
+          dangerouslyUseHTMLString: true,
+          center: true
+        }
+    )
+    return
+  }
+
+  // 2. 正常流程
   currentExam.value = exam
   isRead.value = false
   noticeDialogVisible.value = true
@@ -246,16 +270,7 @@ const confirmStartExam = () => {
 
 // 查看结果
 const handleViewResult = (exam: any) => {
-  // 注意：后端暂时没有根据 publishId 直接获取 recordId 的接口
-  // 这里暂时跳转到结果页，并带上 publishId，让结果页去处理（或提示用户）
-  // 理想情况：exam 对象里应该包含 lastRecordId
-
-  // 临时逻辑：如果考试已结束，尝试查找结果。
-  // 由于数据缺失，暂跳转到错题本或列表页提示
-  // 为了闭环，这里假设 ExamResult 可以接受 publishId 并查询最新记录
   router.push({ path: '/student/exam-result', query: { publishId: exam.id } })
-
-  // ElMessage.info('查看历史试卷功能正在升级中，请前往“仪表盘”查看统计或“错题本”回顾。')
 }
 
 // ------ 样式与格式化 ------

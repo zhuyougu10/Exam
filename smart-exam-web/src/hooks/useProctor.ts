@@ -10,7 +10,8 @@ interface UseProctorOptions {
 
 export function useProctor({ recordId, onAutoSubmit, saveAnswers }: UseProctorOptions) {
     const violationCount = ref(0)
-    const isFullscreen = ref(true)
+    // FIX: 初始化时直接获取当前真实的全屏状态，而不是默认 true
+    const isFullscreen = ref(!!document.fullscreenElement)
     const MAX_VIOLATIONS = 3
     let saveTimer: any = null
 
@@ -34,13 +35,18 @@ export function useProctor({ recordId, onAutoSubmit, saveAnswers }: UseProctorOp
     // 请求全屏
     const enterFullscreen = async () => {
         try {
+            // 只有当前不在全屏时才请求
             if (!document.fullscreenElement) {
                 await document.documentElement.requestFullscreen()
             }
+            // 请求成功，更新状态
             isFullscreen.value = true
         } catch (e) {
-            // 部分浏览器可能拦截非用户交互触发的全屏
-            ElMessage.warning('请点击页面任意位置以进入全屏考试模式')
+            // FIX: 如果全屏请求被浏览器拦截（如刷新页面时），强制将状态置为 false
+            // 这样会触发 ExamPaper.vue 显示遮罩，引导用户点击“恢复”按钮
+            isFullscreen.value = false
+            console.warn('Enter fullscreen blocked:', e)
+            ElMessage.warning('为了保证考试环境，请点击页面恢复全屏模式')
         }
     }
 
@@ -79,7 +85,7 @@ export function useProctor({ recordId, onAutoSubmit, saveAnswers }: UseProctorOp
         }
     }
 
-    // 屏蔽常见按键
+    // 屏蔽常见按键 (F11, F12, Ctrl+P, 等)
     const preventKeys = (e: KeyboardEvent) => {
         // 屏蔽 F11 (全屏), F12 (开发者工具), Esc (退出全屏), Alt+Tab (切屏 - 浏览器无法完全屏蔽但可尝试)
         // 注意：Esc 退出全屏是浏览器强制行为，无法 preventDefault，只能通过 fullscreenchange 监听
@@ -87,39 +93,66 @@ export function useProctor({ recordId, onAutoSubmit, saveAnswers }: UseProctorOp
             e.key === 'F12' ||
             e.key === 'F11' ||
             (e.ctrlKey && e.shiftKey && e.key === 'I') || // DevTools
-            (e.altKey) // Alt 组合键
+            (e.ctrlKey && e.key === 'p') || // Print
+            (e.ctrlKey && e.key === 's') || // Save
+            (e.altKey) // Alt组合键
         ) {
             e.preventDefault()
+            e.stopPropagation()
             // ElMessage.warning('考试期间禁止使用此按键')
         }
     }
 
-    // 禁用右键菜单
-    const preventContextMenu = (e: Event) => {
+    // 统一屏蔽交互：鼠标右键、复制、粘贴、剪切、选择
+    const preventInteraction = (e: Event) => {
         e.preventDefault()
+        e.stopPropagation()
+        return false
     }
 
     onMounted(() => {
+        // 1. 全屏与可见性监听
         document.addEventListener('fullscreenchange', handleFullscreenChange)
         document.addEventListener('visibilitychange', handleVisibilityChange)
+
+        // 2. 键盘事件监听
         window.addEventListener('keydown', preventKeys)
-        window.addEventListener('contextmenu', preventContextMenu)
+
+        // 3. 鼠标与剪贴板事件监听 (新增)
+        document.addEventListener('contextmenu', preventInteraction)
+        document.addEventListener('copy', preventInteraction)
+        document.addEventListener('paste', preventInteraction)
+        document.addEventListener('cut', preventInteraction)
+        document.addEventListener('selectstart', preventInteraction)
 
         // 每 60 秒自动保存一次答案
         saveTimer = setInterval(() => {
             saveAnswers()
         }, 60000)
 
+        // FIX: 挂载时再次同步状态
+        isFullscreen.value = !!document.fullscreenElement
+
         // 尝试进入全屏
+        // 注意：如果是刷新页面，这里会抛出错误（被浏览器拦截），进入 catch 块
+        // 从而将 isFullscreen 置为 false，正确显示遮罩
         enterFullscreen()
     })
 
     onUnmounted(() => {
         if (saveTimer) clearInterval(saveTimer)
+
         document.removeEventListener('fullscreenchange', handleFullscreenChange)
         document.removeEventListener('visibilitychange', handleVisibilityChange)
+
         window.removeEventListener('keydown', preventKeys)
-        window.removeEventListener('contextmenu', preventContextMenu)
+
+        // 移除交互监听
+        document.removeEventListener('contextmenu', preventInteraction)
+        document.removeEventListener('copy', preventInteraction)
+        document.removeEventListener('paste', preventInteraction)
+        document.removeEventListener('cut', preventInteraction)
+        document.removeEventListener('selectstart', preventInteraction)
     })
 
     return {
