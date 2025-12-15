@@ -9,8 +9,10 @@ import com.university.exam.entity.Config;
 import com.university.exam.entity.Course;
 import com.university.exam.entity.Dept;
 import com.university.exam.entity.User;
+import com.university.exam.entity.CourseUser;
 import com.university.exam.service.ConfigService;
 import com.university.exam.service.CourseService;
+import com.university.exam.service.CourseUserService;
 import com.university.exam.service.DeptService;
 import com.university.exam.service.UserService;
 import jakarta.validation.Valid;
@@ -23,6 +25,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +48,7 @@ public class SysAdminController {
     private final UserService userService;
     private final DeptService deptService;
     private final CourseService courseService;
+    private final CourseUserService courseUserService;
     private final ConfigService configService;
     private final BCryptPasswordEncoder passwordEncoder;
 
@@ -174,14 +178,23 @@ public class SysAdminController {
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) String username,
-            @RequestParam(required = false) Long deptId) {
+            @RequestParam(required = false) Long deptId,
+            @RequestParam(required = false) Integer role) {
         // 1. 构建查询条件
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(username)) {
-            queryWrapper.like(User::getUsername, username);
+            // 支持按用户名或真实姓名模糊搜索
+            queryWrapper.and(w -> w
+                .like(User::getUsername, username)
+                .or()
+                .like(User::getRealName, username)
+            );
         }
         if (deptId != null) {
             queryWrapper.eq(User::getDeptId, deptId);
+        }
+        if (role != null) {
+            queryWrapper.eq(User::getRole, role);
         }
 
         // 2. 分页查询
@@ -322,18 +335,52 @@ public class SysAdminController {
         // 1. 构建查询条件
         LambdaQueryWrapper<Course> queryWrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(courseName)) {
-            queryWrapper.like(Course::getCourseName, courseName);
+            queryWrapper.and(w -> w
+                .like(Course::getCourseName, courseName)
+                .or()
+                .like(Course::getCourseCode, courseName)
+            );
         }
         if (deptId != null) {
             queryWrapper.eq(Course::getDeptId, deptId);
         }
+        queryWrapper.orderByDesc(Course::getCreateTime);
 
         // 2. 分页查询
         IPage<Course> coursePage = courseService.page(new Page<>(page, size), queryWrapper);
 
-        // 3. 构建响应数据
+        // 3. 统计每个课程的教师数和学生数
+        List<Map<String, Object>> records = new ArrayList<>();
+        for (Course course : coursePage.getRecords()) {
+            Map<String, Object> courseMap = new HashMap<>();
+            courseMap.put("id", course.getId());
+            courseMap.put("courseName", course.getCourseName());
+            courseMap.put("courseCode", course.getCourseCode());
+            courseMap.put("deptId", course.getDeptId());
+            courseMap.put("credits", course.getCredits());
+            courseMap.put("coverImg", course.getCoverImg());
+            courseMap.put("description", course.getDescription());
+            courseMap.put("status", course.getStatus());
+            courseMap.put("createTime", course.getCreateTime());
+            
+            // 统计教师数 (role=2)
+            long teacherCount = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
+                    .eq(CourseUser::getCourseId, course.getId())
+                    .eq(CourseUser::getRole, (byte) 2));
+            courseMap.put("teacherCount", teacherCount);
+            
+            // 统计学生数 (role=1)
+            long studentCount = courseUserService.count(new LambdaQueryWrapper<CourseUser>()
+                    .eq(CourseUser::getCourseId, course.getId())
+                    .eq(CourseUser::getRole, (byte) 1));
+            courseMap.put("studentCount", studentCount);
+            
+            records.add(courseMap);
+        }
+
+        // 4. 构建响应数据
         Map<String, Object> response = new HashMap<>();
-        response.put("records", coursePage.getRecords());
+        response.put("records", records);
         response.put("total", coursePage.getTotal());
         response.put("current", coursePage.getCurrent());
         response.put("size", coursePage.getSize());

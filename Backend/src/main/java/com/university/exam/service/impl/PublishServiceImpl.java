@@ -152,6 +152,8 @@ public class PublishServiceImpl extends ServiceImpl<PublishMapper, Publish> impl
             }
 
             dto.setStatus(status);
+            // 设置是否需要密码
+            dto.setNeedPassword(publish.getPassword() != null && !publish.getPassword().isEmpty());
             result.add(dto);
         }
 

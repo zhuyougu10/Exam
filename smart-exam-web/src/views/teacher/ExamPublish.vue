@@ -141,18 +141,25 @@
         </el-form-item>
 
         <el-form-item label="参考班级" prop="targetDeptIds">
-          <el-tree-select
+          <el-select
               v-model="form.targetDeptIds"
-              :data="deptTree"
-              :props="{ label: 'deptName', value: 'id', children: 'children' }"
               multiple
-              show-checkbox
               collapse-tags
               collapse-tags-tooltip
-              placeholder="请选择参与考试的班级"
-              node-key="id"
+              :placeholder="form.paperId ? '请选择参与考试的班级' : '请先选择试卷'"
+              :disabled="!form.paperId"
               class="w-full"
-          />
+          >
+            <el-option
+                v-for="dept in courseDepts"
+                :key="dept.id"
+                :label="dept.deptName"
+                :value="dept.id"
+            />
+          </el-select>
+          <div v-if="form.paperId && courseDepts.length === 0" class="text-xs text-orange-500 mt-1">
+            该课程暂无已加入的班级学生，请先在课程管理中添加学生
+          </div>
         </el-form-item>
 
         <!-- 新增: 解析查看权限设置 -->
@@ -212,6 +219,7 @@ const total = ref(0)
 const paperOptions = ref<any[]>([])
 const deptTree = ref<any[]>([])
 const deptMap = ref<Record<number, any>>({})
+const courseDepts = ref<any[]>([]) // 课程关联的班级列表
 const formRef = ref()
 
 const queryParams = reactive({
@@ -287,10 +295,32 @@ const fetchData = async () => {
   }
 }
 
-const onPaperSelect = (id: number) => {
+const onPaperSelect = async (id: number) => {
   const paper = paperOptions.value.find(p => p.id === id)
-  if (paper && !form.title) {
-    form.title = paper.title
+  if (paper) {
+    if (!form.title) {
+      form.title = paper.title
+    }
+    // 根据试卷所属课程加载关联班级
+    form.targetDeptIds = []
+    if (paper.courseId) {
+      await fetchCourseDepts(paper.courseId)
+    } else {
+      courseDepts.value = []
+    }
+  }
+}
+
+const fetchCourseDepts = async (courseId: number) => {
+  try {
+    const res: any = await request.get('/course/user/depts', { params: { courseId } })
+    courseDepts.value = res || []
+    if (courseDepts.value.length === 0) {
+      ElMessage.warning('该课程暂无学生，请先在课程管理中添加学生')
+    }
+  } catch (error) {
+    console.error(error)
+    courseDepts.value = []
   }
 }
 
@@ -298,14 +328,9 @@ const handleSubmit = async () => {
   if (!formRef.value) return
   await formRef.value.validate(async (valid: boolean) => {
     if (valid) {
-      // 1. 校验班级选择
-      const classIds = form.targetDeptIds.filter(id => {
-        const node = deptMap.value[id]
-        return node && node.category === 3
-      })
-
-      if (classIds.length === 0) {
-        ElMessage.warning('请至少选择一个有效的班级（不包含学院或系）')
+      // courseDepts 已经是课程关联的班级，直接使用
+      if (form.targetDeptIds.length === 0) {
+        ElMessage.warning('请至少选择一个班级')
         return
       }
 
@@ -327,7 +352,7 @@ const handleSubmit = async () => {
       try {
         const payload = {
           ...form,
-          targetDeptIds: classIds,
+          targetDeptIds: form.targetDeptIds,
           startTime: form.timeRange[0],
           endTime: form.timeRange[1]
         }
@@ -357,6 +382,7 @@ const handleAdd = () => {
     password: '',
     allowEarlyAnalysis: 1 // 默认开启
   })
+  courseDepts.value = [] // 重置课程班级列表
   dialogVisible.value = true
 }
 

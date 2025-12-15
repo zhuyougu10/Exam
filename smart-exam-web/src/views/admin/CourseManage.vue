@@ -80,13 +80,29 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="credits" label="学分" width="100" align="center">
+        <el-table-column prop="credits" label="学分" width="80" align="center">
           <template #default="{ row }">
-            <el-tag effect="plain" type="info">{{ row.credits }} 学分</el-tag>
+            <el-tag effect="plain" type="info">{{ row.credits }}</el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column label="所属院系" min-width="150" show-overflow-tooltip>
+        <el-table-column label="授课教师" width="100" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openMemberDrawer(row, 2)">
+              {{ row.teacherCount || 0 }} 人
+            </el-button>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="选课学生" width="100" align="center">
+          <template #default="{ row }">
+            <el-button link type="success" @click="openMemberDrawer(row, 1)">
+              {{ row.studentCount || 0 }} 人
+            </el-button>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="所属院系" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="dept-text">
               <el-icon class="icon"><School /></el-icon>
@@ -220,13 +236,93 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 成员管理抽屉 -->
+    <el-drawer
+        v-model="memberDrawer.visible"
+        :title="memberDrawer.title"
+        size="500px"
+        direction="rtl"
+    >
+      <div class="member-drawer-content">
+        <!-- 添加成员区域 -->
+        <div class="add-member-section">
+          <el-select
+              v-model="memberDrawer.selectedUserId"
+              filterable
+              remote
+              reserve-keyword
+              placeholder="输入用户名或姓名搜索"
+              :remote-method="searchUsers"
+              :loading="memberDrawer.searchLoading"
+              class="user-select"
+          >
+            <el-option
+                v-for="user in memberDrawer.userOptions"
+                :key="user.id"
+                :label="`${user.realName} (${user.username})`"
+                :value="user.id"
+            />
+          </el-select>
+          <el-button type="primary" @click="handleAddMember" :disabled="!memberDrawer.selectedUserId">
+            添加
+          </el-button>
+        </div>
+
+        <!-- 批量导入班级（仅学生） -->
+        <div v-if="memberDrawer.role === 1" class="import-dept-section">
+          <el-tree-select
+              v-model="memberDrawer.importDeptId"
+              :data="deptOptions"
+              :props="{ label: 'deptName', value: 'id', children: 'children' }"
+              placeholder="选择班级批量导入学生"
+              check-strictly
+              class="dept-select"
+          />
+          <el-button type="success" @click="handleImportDept" :disabled="!memberDrawer.importDeptId">
+            批量导入
+          </el-button>
+        </div>
+
+        <!-- 成员列表 -->
+        <el-table :data="memberDrawer.members" v-loading="memberDrawer.loading" class="member-table">
+          <el-table-column label="用户信息" min-width="180">
+            <template #default="{ row }">
+              <div class="user-info">
+                <el-avatar :size="32" :src="row.avatar">{{ row.realName?.charAt(0) }}</el-avatar>
+                <div class="user-detail">
+                  <span class="real-name">{{ row.realName }}</span>
+                  <span class="username">{{ row.username }}</span>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="加入时间" width="140">
+            <template #default="{ row }">
+              <span class="time-text">{{ formatTime(row.createTime) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80" align="center">
+            <template #default="{ row }">
+              <el-popconfirm title="确定移除该成员？" @confirm="handleRemoveMember(row)">
+                <template #reference>
+                  <el-button type="danger" link size="small">移除</el-button>
+                </template>
+              </el-popconfirm>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-empty v-if="memberDrawer.members.length === 0 && !memberDrawer.loading" description="暂无成员" />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Plus, Picture, Link, School, Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import { Search, Plus, Picture, Link, School, Edit, Delete, Refresh, User } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 // 数据定义
@@ -239,6 +335,20 @@ const formRef = ref()
 const courseList = ref([])
 const total = ref(0)
 const deptOptions = ref<any[]>([])
+
+// 成员管理抽屉
+const memberDrawer = reactive({
+  visible: false,
+  title: '',
+  courseId: undefined as number | undefined,
+  role: 1 as number, // 1-学生, 2-教师
+  members: [] as any[],
+  loading: false,
+  selectedUserId: undefined as number | undefined,
+  userOptions: [] as any[],
+  searchLoading: false,
+  importDeptId: undefined as number | undefined
+})
 
 const queryParams = reactive({
   page: 1,
@@ -394,6 +504,117 @@ const handleStatusChange = async (row: any, newVal: any) => {
     row.status = newVal === 1 ? 0 : 1
   }
 }
+
+// ===================== 成员管理 =====================
+
+// 打开成员管理抽屉
+const openMemberDrawer = (row: any, role: number) => {
+  memberDrawer.courseId = row.id
+  memberDrawer.role = role
+  memberDrawer.title = `${row.courseName} - ${role === 2 ? '授课教师' : '选课学生'}`
+  memberDrawer.selectedUserId = undefined
+  memberDrawer.userOptions = []
+  memberDrawer.importDeptId = undefined
+  memberDrawer.visible = true
+  fetchCourseMembers()
+}
+
+// 获取课程成员列表
+const fetchCourseMembers = async () => {
+  memberDrawer.loading = true
+  try {
+    const res: any = await request.get('/course/user/list', {
+      params: {
+        courseId: memberDrawer.courseId,
+        role: memberDrawer.role
+      }
+    })
+    memberDrawer.members = res.records || []
+  } catch (error) {
+    console.error(error)
+  } finally {
+    memberDrawer.loading = false
+  }
+}
+
+// 搜索用户
+const searchUsers = async (query: string) => {
+  if (!query) {
+    memberDrawer.userOptions = []
+    return
+  }
+  memberDrawer.searchLoading = true
+  try {
+    // 根据当前抽屉角色过滤：教师只搜教师(role=2)，学生只搜学生(role=1)
+    const res: any = await request.get('/admin/user/list', {
+      params: { 
+        username: query, 
+        size: 20,
+        role: memberDrawer.role // 1-学生, 2-教师
+      }
+    })
+    // 过滤掉已在课程中的成员
+    const existingIds = memberDrawer.members.map((m: any) => m.userId)
+    memberDrawer.userOptions = (res.records || []).filter((u: any) => !existingIds.includes(u.id))
+  } catch (error) {
+    console.error(error)
+  } finally {
+    memberDrawer.searchLoading = false
+  }
+}
+
+// 添加成员
+const handleAddMember = async () => {
+  if (!memberDrawer.selectedUserId || !memberDrawer.courseId) return
+  try {
+    await request.post('/course/user/add', {
+      courseId: memberDrawer.courseId,
+      userId: memberDrawer.selectedUserId,
+      role: memberDrawer.role
+    })
+    ElMessage.success('添加成功')
+    memberDrawer.selectedUserId = undefined
+    memberDrawer.userOptions = []
+    fetchCourseMembers()
+    fetchData() // 刷新课程列表以更新统计
+  } catch (error) {
+    // handled
+  }
+}
+
+// 批量导入班级学生
+const handleImportDept = async () => {
+  if (!memberDrawer.importDeptId || !memberDrawer.courseId) return
+  try {
+    const res: any = await request.post('/course/user/import-dept', {
+      courseId: memberDrawer.courseId,
+      deptId: memberDrawer.importDeptId
+    })
+    ElMessage.success(res || '导入完成')
+    memberDrawer.importDeptId = undefined
+    fetchCourseMembers()
+    fetchData()
+  } catch (error) {
+    // handled
+  }
+}
+
+// 移除成员
+const handleRemoveMember = async (row: any) => {
+  try {
+    await request.delete('/course/user/remove', {
+      params: {
+        courseId: memberDrawer.courseId,
+        userId: row.userId
+      }
+    })
+    ElMessage.success('移除成功')
+    fetchCourseMembers()
+    fetchData()
+  } catch (error) {
+    // handled
+  }
+}
 </script>
 
 <style scoped>
@@ -527,5 +748,47 @@ const handleStatusChange = async (row: any, newVal: any) => {
   display: flex;
   justify-content: flex-end;
   margin-top: 10px;
+}
+
+/* 成员管理抽屉样式 */
+.member-drawer-content {
+  padding: 0 10px;
+}
+
+.add-member-section,
+.import-dept-section {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.user-select,
+.dept-select {
+  flex: 1;
+}
+
+.member-table {
+  margin-top: 16px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.real-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.username {
+  font-size: 12px;
+  color: #909399;
 }
 </style>

@@ -167,6 +167,7 @@ import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Collection, Search, Refresh, UploadFilled, Delete, Loading, Warning, Document } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { getWebSocketInstance } from '@/utils/websocket'
 
 const loading = ref(false)
 const uploadingCount = ref(0)
@@ -186,22 +187,61 @@ const filteredFileList = computed(() => {
   )
 })
 
+// WebSocket文件状态处理
+const handleFileStatus = (data: any) => {
+  if (data && data.id) {
+    const fileIndex = fileList.value.findIndex((f: any) => f.id === data.id)
+    if (fileIndex >= 0) {
+      fileList.value[fileIndex].status = data.status
+      if (data.difyDocumentId) {
+        fileList.value[fileIndex].difyDocumentId = data.difyDocumentId
+      }
+      // 状态变更后检查是否还需要轮询
+      if (!fileList.value.some(file => file.status === 1)) {
+        stopPolling()
+      }
+    } else {
+      // 新文件，刷新列表
+      fetchFiles(true)
+    }
+  }
+}
+
+// 注册WebSocket事件处理器
+const registerWsHandlers = () => {
+  const wsInstance = getWebSocketInstance()
+  if (wsInstance?.isConnected) {
+    wsInstance.on('file_status', handleFileStatus)
+  }
+}
+
+// 移除WebSocket事件处理器
+const unregisterWsHandlers = () => {
+  const wsInstance = getWebSocketInstance()
+  if (wsInstance) {
+    wsInstance.off('file_status', handleFileStatus)
+  }
+}
+
 onMounted(async () => {
   await fetchCourses()
   if (courseOptions.value.length > 0) {
     queryParams.courseId = courseOptions.value[0].id
     fetchFiles()
   }
+  registerWsHandlers()
 })
 
 onUnmounted(() => {
   stopPolling()
+  unregisterWsHandlers()
 })
 
 const fetchCourses = async () => {
   try {
-    const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
-    courseOptions.value = res.records || []
+    // 只获取当前用户已加入的课程
+    const res: any = await request.get('/course/user/my-courses')
+    courseOptions.value = res || []
   } catch (error) { console.error(error) }
 }
 

@@ -532,6 +532,7 @@ import {
   Delete, Edit, UploadFilled, Loading, Upload, Link, Picture
 } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { getWebSocketInstance } from '@/utils/websocket'
 
 // ... (逻辑代码省略，请直接复用上文) ...
 const loading = ref(false)
@@ -609,19 +610,68 @@ const manualRules = {
   }]
 }
 
+// WebSocket任务进度处理
+const handleTaskProgress = (data: any) => {
+  if (data && data.taskId) {
+    const taskIndex = tasks.value.findIndex((t: any) => t.id === data.taskId)
+    if (taskIndex >= 0) {
+      tasks.value[taskIndex].currentCount = data.currentCount
+      tasks.value[taskIndex].status = data.status
+      if (data.errorMsg) tasks.value[taskIndex].errorMsg = data.errorMsg
+    }
+  }
+}
+
+const handleTaskComplete = (data: any) => {
+  if (data && data.taskId) {
+    const taskIndex = tasks.value.findIndex((t: any) => t.id === data.taskId)
+    if (taskIndex >= 0) {
+      tasks.value[taskIndex].currentCount = data.currentCount
+      tasks.value[taskIndex].status = data.status
+      if (data.errorMsg) tasks.value[taskIndex].errorMsg = data.errorMsg
+    }
+    // 任务完成，刷新题目列表
+    if (data.status === 2) {
+      ElMessage.success('AI 出题任务已完成，题目列表已自动更新')
+      fetchData()
+    }
+    fetchTasks()
+  }
+}
+
+// 注册WebSocket事件处理器
+const registerWsHandlers = () => {
+  const wsInstance = getWebSocketInstance()
+  if (wsInstance?.isConnected) {
+    wsInstance.on('task_progress', handleTaskProgress)
+    wsInstance.on('task_complete', handleTaskComplete)
+  }
+}
+
+// 移除WebSocket事件处理器
+const unregisterWsHandlers = () => {
+  const wsInstance = getWebSocketInstance()
+  if (wsInstance) {
+    wsInstance.off('task_progress', handleTaskProgress)
+    wsInstance.off('task_complete', handleTaskComplete)
+  }
+}
+
 onMounted(() => {
   fetchCourses()
   fetchData()
+  registerWsHandlers()
 })
 
 onUnmounted(() => {
   stopPoll()
+  unregisterWsHandlers()
 })
 
 watch(drawerVisible, (val) => {
   if (val) {
     fetchTasks()
-    startPoll()
+    startPoll() // 保留轮询作为WebSocket的备用方案
   } else {
     stopPoll()
   }
@@ -648,8 +698,9 @@ const handleCurrentChange = (val: number) => {
 
 const fetchCourses = async () => {
   try {
-    const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
-    courseOptions.value = res.records
+    // 只获取当前用户已加入的课程
+    const res: any = await request.get('/course/user/my-courses')
+    courseOptions.value = res || []
   } catch (error) { console.error(error) }
 }
 

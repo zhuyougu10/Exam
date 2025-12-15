@@ -100,36 +100,149 @@
       </div>
     </div>
 
-    <!-- 简易预览弹窗 -->
-    <el-dialog v-model="previewVisible" title="试卷预览" width="500px">
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="试卷ID">{{ currentPaper.id }}</el-descriptions-item>
-        <el-descriptions-item label="试卷标题">{{ currentPaper.title }}</el-descriptions-item>
-        <el-descriptions-item label="总分">{{ currentPaper.totalScore }}</el-descriptions-item>
-        <el-descriptions-item label="及格分">{{ currentPaper.passScore }}</el-descriptions-item>
-        <el-descriptions-item label="难度">{{ getDifficultyLabel(currentPaper.difficulty) }}</el-descriptions-item>
-      </el-descriptions>
-      <div style="margin-top: 20px; text-align: center; color: #9ca3af; font-size: 13px;">
-        ( 完整预览请在“考试发布”或“答题”端查看 )
+    <!-- 详细预览弹窗 -->
+    <el-dialog v-model="previewVisible" title="试卷预览" width="900px" top="5vh" destroy-on-close>
+      <div v-loading="previewLoading" style="max-height: 70vh; overflow-y: auto;">
+        <!-- 试卷基本信息 -->
+        <div style="background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0; font-size: 18px; color: #1f2937;">{{ paperDetail.title }}</h3>
+            <div style="display: flex; gap: 12px;">
+              <el-tag type="primary">总分: {{ paperDetail.totalScore }}</el-tag>
+              <el-tag type="success">及格分: {{ paperDetail.passScore }}</el-tag>
+              <el-tag type="warning">时长: {{ paperDetail.duration }}分钟</el-tag>
+            </div>
+          </div>
+        </div>
+
+        <!-- 添加题目按钮 -->
+        <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-weight: 600; color: #374151;">题目列表 ({{ paperDetail.questions?.length || 0 }} 题)</span>
+          <el-button type="primary" size="small" icon="Plus" @click="showAddQuestionDialog">添加题目</el-button>
+        </div>
+
+        <!-- 题目列表 -->
+        <div v-if="paperDetail.questions && paperDetail.questions.length > 0" style="display: flex; flex-direction: column; gap: 12px;">
+          <div v-for="(q, index) in paperDetail.questions" :key="q.id" 
+               style="background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px;">
+            <!-- 题目头部 -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="background: #4f46e5; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">{{ index + 1 }}</span>
+                <el-tag size="small" effect="plain">{{ getTypeLabel(q.type) }}</el-tag>
+                <el-tag size="small" :type="getDifficultyType(q.difficulty)" effect="light">{{ getDifficultyLabel(q.difficulty) }}</el-tag>
+                <span style="color: #ef4444; font-size: 12px; font-weight: bold;">{{ q.score }}分</span>
+              </div>
+              <el-popconfirm title="确定从试卷中移除该题目？" @confirm="removeQuestion(q.id)">
+                <template #reference>
+                  <el-button type="danger" size="small" icon="Delete" link>移除</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
+
+            <!-- 题目内容 -->
+            <div style="color: #374151; line-height: 1.6; margin-bottom: 12px;">{{ q.content }}</div>
+
+            <!-- 选项 (单选/多选) -->
+            <div v-if="[1, 2].includes(q.type) && q.options" style="margin-bottom: 12px;">
+              <div v-for="(opt, oIdx) in parseOptions(q.options)" :key="oIdx" 
+                   style="display: flex; gap: 8px; padding: 6px 0; color: #4b5563;">
+                <span style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid #d1d5db; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0;">
+                  {{ String.fromCharCode(65 + oIdx) }}
+                </span>
+                <span>{{ opt }}</span>
+              </div>
+            </div>
+
+            <!-- 答案和解析 -->
+            <div style="background: #f0fdf4; padding: 12px; border-radius: 6px; border-left: 3px solid #22c55e;">
+              <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                <div>
+                  <span style="color: #6b7280; font-size: 12px;">正确答案：</span>
+                  <span style="color: #16a34a; font-weight: bold;">{{ formatAnswer(q.answer, q.type) }}</span>
+                </div>
+              </div>
+              <div v-if="q.analysis" style="margin-top: 8px; color: #4b5563; font-size: 13px;">
+                <span style="color: #6b7280;">解析：</span>{{ q.analysis }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <el-empty v-else description="暂无题目" />
+      </div>
+    </el-dialog>
+
+    <!-- 添加题目弹窗 -->
+    <el-dialog v-model="addQuestionVisible" title="添加题目到试卷" width="700px" top="10vh">
+      <div style="margin-bottom: 16px; display: flex; gap: 12px;">
+        <el-select v-model="questionQuery.type" placeholder="题型" clearable style="width: 120px;" @change="fetchQuestions">
+          <el-option label="单选" :value="1" />
+          <el-option label="多选" :value="2" />
+          <el-option label="判断" :value="3" />
+          <el-option label="简答" :value="4" />
+          <el-option label="填空" :value="5" />
+        </el-select>
+        <el-input v-model="questionQuery.content" placeholder="搜索题目内容" clearable style="flex: 1;" @keyup.enter="fetchQuestions" />
+        <el-button type="primary" @click="fetchQuestions">搜索</el-button>
+      </div>
+
+      <el-table v-loading="questionLoading" :data="questionList" height="400px" stripe>
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column label="题型" width="80">
+          <template #default="{ row }">
+            <el-tag size="small">{{ getTypeLabel(row.type) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="content" label="题目内容" show-overflow-tooltip />
+        <el-table-column label="操作" width="150" align="center">
+          <template #default="{ row }">
+            <el-input-number v-model="row.addScore" :min="0.5" :step="0.5" size="small" style="width: 70px;" placeholder="分值" />
+            <el-button type="primary" size="small" icon="Plus" @click="addQuestion(row)" :disabled="!row.addScore" style="margin-left: 8px;">添加</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div style="margin-top: 12px; display: flex; justify-content: center;">
+        <el-pagination small layout="prev, pager, next" :total="questionTotal" 
+                       v-model:current-page="questionQuery.page" :page-size="questionQuery.size" @current-change="fetchQuestions" />
       </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Plus, Delete, View, Timer, DocumentCopy } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const paperList = ref([])
 const total = ref(0)
 const courseOptions = ref<any[]>([])
 const previewVisible = ref(false)
 const currentPaper = ref<any>({})
+
+// 详细预览相关
+const previewLoading = ref(false)
+const paperDetail = ref<any>({})
+
+// 添加题目相关
+const addQuestionVisible = ref(false)
+const questionLoading = ref(false)
+const questionList = ref<any[]>([])
+const questionTotal = ref(0)
+const questionQuery = reactive({
+  page: 1,
+  size: 10,
+  type: undefined as number | undefined,
+  content: '',
+  courseId: undefined as number | undefined
+})
 
 const queryParams = reactive({
   page: 1,
@@ -138,15 +251,32 @@ const queryParams = reactive({
   title: ''
 })
 
-onMounted(() => {
-  fetchCourses()
-  fetchData()
+onMounted(async () => {
+  await fetchCourses()
+  await fetchData()
+  
+  // 检查是否有自动打开预览的参数
+  if (route.query.previewPaperId) {
+    const paperId = Number(route.query.previewPaperId)
+    const paper = paperList.value.find((p: any) => p.id === paperId)
+    if (paper) {
+      handlePreview(paper)
+    } else {
+      // 如果列表中没有，直接加载预览
+      currentPaper.value = { id: paperId }
+      previewVisible.value = true
+      await fetchPaperDetail(paperId)
+    }
+    // 清除URL参数
+    router.replace({ query: {} })
+  }
 })
 
 const fetchCourses = async () => {
   try {
-    const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
-    courseOptions.value = res.records
+    // 只获取当前用户已加入的课程
+    const res: any = await request.get('/course/user/my-courses')
+    courseOptions.value = res || []
   } catch (error) { console.error(error) }
 }
 
@@ -170,9 +300,88 @@ const handlePublish = (row: any) => {
   router.push({ path: '/teacher/exam-publish', query: { paperId: row.id, paperTitle: row.title } })
 }
 
-const handlePreview = (row: any) => {
+// 预览试卷详情
+const handlePreview = async (row: any) => {
   currentPaper.value = row
   previewVisible.value = true
+  await fetchPaperDetail(row.id)
+}
+
+const fetchPaperDetail = async (paperId: number) => {
+  previewLoading.value = true
+  try {
+    const res: any = await request.get(`/paper/${paperId}/detail`)
+    paperDetail.value = res
+  } catch (error) {
+    console.error(error)
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+// 显示添加题目弹窗
+const showAddQuestionDialog = () => {
+  questionQuery.courseId = paperDetail.value.courseId
+  questionQuery.page = 1
+  questionQuery.type = undefined
+  questionQuery.content = ''
+  addQuestionVisible.value = true
+  fetchQuestions()
+}
+
+// 获取题目列表
+const fetchQuestions = async () => {
+  questionLoading.value = true
+  try {
+    const params: any = {
+      page: questionQuery.page,
+      size: questionQuery.size,
+      courseId: questionQuery.courseId
+    }
+    if (questionQuery.type) params.type = questionQuery.type
+    if (questionQuery.content) params.content = questionQuery.content
+    
+    const res: any = await request.get('/question/list', { params })
+    // 过滤掉已在试卷中的题目，并初始化分值
+    const existIds = new Set(paperDetail.value.questions?.map((q: any) => q.id) || [])
+    questionList.value = (res.records || [])
+      .filter((q: any) => !existIds.has(q.id))
+      .map((q: any) => ({ ...q, addScore: 5 }))
+    questionTotal.value = res.total
+  } catch (error) {
+    console.error(error)
+  } finally {
+    questionLoading.value = false
+  }
+}
+
+// 添加题目到试卷
+const addQuestion = async (row: any) => {
+  try {
+    await request.post(`/paper/${currentPaper.value.id}/add-question`, {
+      questionId: row.id,
+      score: row.addScore
+    })
+    ElMessage.success('添加成功')
+    // 刷新预览
+    await fetchPaperDetail(currentPaper.value.id)
+    // 刷新题目列表（排除已添加的）
+    await fetchQuestions()
+    // 刷新主列表
+    fetchData()
+  } catch (error) { }
+}
+
+// 从试卷移除题目
+const removeQuestion = async (questionId: number) => {
+  try {
+    await request.delete(`/paper/${currentPaper.value.id}/question/${questionId}`)
+    ElMessage.success('移除成功')
+    // 刷新预览
+    await fetchPaperDetail(currentPaper.value.id)
+    // 刷新主列表
+    fetchData()
+  } catch (error) { }
 }
 
 const handleDelete = async (row: any) => {
@@ -188,7 +397,37 @@ const getCourseName = (id: number) => {
   return c ? c.courseName : `课程ID:${id}`
 }
 
+const getTypeLabel = (type: number) => ({ 1: '单选', 2: '多选', 3: '判断', 4: '简答', 5: '填空' } as any)[type] || '未知'
 const getDifficultyLabel = (diff: number) => ({ 1: '简单', 2: '中等', 3: '困难' } as any)[diff] || '未知'
 const getDifficultyType = (diff: number) => ({ 1: 'success', 2: 'warning', 3: 'danger' } as any)[diff] || 'info'
 const formatTime = (time: string) => time ? time.replace('T', ' ').substring(0, 16) : '-'
+
+// 解析选项JSON
+const parseOptions = (options: string) => {
+  if (!options) return []
+  try {
+    return JSON.parse(options)
+  } catch {
+    return []
+  }
+}
+
+// 格式化答案显示
+const formatAnswer = (answer: string, type: number) => {
+  if (!answer) return '-'
+  if (type === 3) {
+    // 判断题
+    return answer === '1' || answer === 'true' ? '正确' : '错误'
+  }
+  if (type === 1 || type === 2) {
+    // 单选/多选：将索引转换为字母
+    try {
+      const indices = answer.split(',').map(Number)
+      return indices.map(i => String.fromCharCode(65 + i)).join(', ')
+    } catch {
+      return answer
+    }
+  }
+  return answer
+}
 </script>

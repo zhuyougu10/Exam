@@ -1,82 +1,132 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Delete, View, Hide, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import request from '@/utils/request'
 
 // 错题接口定义
 interface MistakeItem {
   id: number
+  questionId: number
   questionContent: string
-  type: number // 1:单选, 2:多选, 3:判断, 4:简答
-  typeLabel: string
-  examName: string
-  recordTime: string
+  questionType: number // 1:单选, 2:多选, 3:判断, 4:简答, 5:填空
+  options: string // JSON字符串
+  courseName: string
+  createTime: string
   analysis: string
   correctAnswer: string
   myAnswer: string
+  wrongCount: number
   showAnalysis: boolean
 }
 
 const loading = ref(false)
 const list = ref<MistakeItem[]>([])
 const keyword = ref('')
+const total = ref(0)
+const queryParams = ref({
+  current: 1,
+  size: 50
+})
 
-// 模拟加载数据
-const fetchMistakes = () => {
-  loading.value = true
-  setTimeout(() => {
-    list.value = [
-      {
-        id: 1,
-        questionContent: 'Java 中 ArrayList 和 LinkedList 的主要区别是什么？请简要说明其底层数据结构及应用场景。',
-        type: 4,
-        typeLabel: '简答题',
-        examName: 'Java 高级程序设计期中',
-        recordTime: '2025-05-20',
-        correctAnswer: 'ArrayList基于数组，查询快增删慢；LinkedList基于链表，增删快查询慢...',
-        myAnswer: 'ArrayList是链表，LinkedList是数组（记反了）',
-        analysis: 'ArrayList 底层是动态数组，内存连续，适合随机访问；LinkedList 底层是双向链表，适合频繁插入删除。',
-        showAnalysis: false
-      },
-      {
-        id: 2,
-        questionContent: '下列关于 Spring Boot 自动配置原理描述正确的是？',
-        type: 1,
-        typeLabel: '单选题',
-        examName: 'Spring Boot 框架技术',
-        recordTime: '2025-06-01',
-        correctAnswer: 'A',
-        myAnswer: 'C',
-        analysis: '@EnableAutoConfiguration 利用 @Import 导入选择器，加载 META-INF/spring.factories 中的配置类。',
-        showAnalysis: false
-      },
-      {
-        id: 3,
-        questionContent: 'TCP 协议通过什么机制保证数据传输的可靠性？',
-        type: 2,
-        typeLabel: '多选题',
-        examName: '计算机网络基础',
-        recordTime: '2025-06-10',
-        correctAnswer: 'A,B,D',
-        myAnswer: 'A,B',
-        analysis: 'TCP 通过校验和、序列号、确认应答、重发控制、连接管理和窗口控制等机制保证可靠性。',
-        showAnalysis: false
-      },
-      {
-        id: 4,
-        questionContent: 'HashMap 是线程安全的吗？',
-        type: 3,
-        typeLabel: '判断题',
-        examName: 'Java 基础测验',
-        recordTime: '2025-04-15',
-        correctAnswer: '错误',
-        myAnswer: '正确',
-        analysis: 'HashMap 是非线程安全的，多线程环境下应使用 ConcurrentHashMap。',
-        showAnalysis: false
+// 过滤后的列表
+const filteredList = computed(() => {
+  if (!keyword.value) return list.value
+  return list.value.filter(item =>
+      item.questionContent?.toLowerCase().includes(keyword.value.toLowerCase())
+  )
+})
+
+// 题型标签
+const getTypeLabel = (type: number) => {
+  const labels: Record<number, string> = {
+    1: '单选题',
+    2: '多选题',
+    3: '判断题',
+    4: '简答题',
+    5: '填空题'
+  }
+  return labels[type] || '未知'
+}
+
+// 题型标签颜色
+const getTypeTagType = (type: number) => {
+  const types: Record<number, string> = {
+    1: '',
+    2: 'warning',
+    3: 'info',
+    4: 'success',
+    5: 'danger'
+  }
+  return types[type] || ''
+}
+
+// 格式化答案显示
+const formatAnswer = (answer: string, type: number, options?: string) => {
+  if (!answer) return '-'
+  
+  // 判断题
+  if (type === 3) {
+    return answer === '1' || answer === 'true' || answer === '正确' ? '正确' : '错误'
+  }
+  
+  // 单选/多选题：将索引转换为字母
+  if (type === 1 || type === 2) {
+    try {
+      // 尝试解析JSON数组格式
+      const parsed = JSON.parse(answer)
+      if (Array.isArray(parsed)) {
+        return parsed.map(i => String.fromCharCode(65 + Number(i))).join(', ')
       }
-    ]
+    } catch {
+      // 尝试逗号分隔格式
+      if (answer.includes(',')) {
+        return answer.split(',').map(i => String.fromCharCode(65 + Number(i.trim()))).join(', ')
+      }
+      // 单个数字
+      const num = parseInt(answer)
+      if (!isNaN(num) && num >= 0 && num < 26) {
+        return String.fromCharCode(65 + num)
+      }
+    }
+  }
+  
+  return answer
+}
+
+// 解析选项
+const parseOptions = (optionsStr: string) => {
+  if (!optionsStr) return []
+  try {
+    return JSON.parse(optionsStr)
+  } catch {
+    return []
+  }
+}
+
+// 格式化时间
+const formatTime = (time: string) => {
+  if (!time) return '-'
+  return time.replace('T', ' ').substring(0, 10)
+}
+
+// 加载数据
+const fetchMistakes = async () => {
+  loading.value = true
+  try {
+    const res: any = await request.get('/mistake-book/list', { params: queryParams.value })
+    const records = res.records || []
+    list.value = records.map((item: any) => ({
+      ...item,
+      showAnalysis: false
+    }))
+    total.value = res.total || 0
+  } catch (error) {
+    console.error('获取错题本失败', error)
+    list.value = []
+  } finally {
     loading.value = false
-  }, 500)
+  }
 }
 
 // 切换解析显示
@@ -95,9 +145,15 @@ const handleRemove = (item: MistakeItem) => {
         type: 'warning',
       }
   )
-      .then(() => {
-        list.value = list.value.filter(i => i.id !== item.id)
-        ElMessage.success('移除成功')
+      .then(async () => {
+        try {
+          await request.delete(`/mistake-book/${item.id}`)
+          list.value = list.value.filter(i => i.id !== item.id)
+          total.value--
+          ElMessage.success('移除成功')
+        } catch (error) {
+          ElMessage.error('移除失败')
+        }
       })
       .catch(() => {})
 }
@@ -129,7 +185,7 @@ onMounted(() => {
     <div v-loading="loading" class="mistake-grid">
       <el-row :gutter="20">
         <el-col
-            v-for="item in list"
+            v-for="item in filteredList"
             :key="item.id"
             :xs="24"
             :sm="12"
@@ -139,16 +195,27 @@ onMounted(() => {
           <div class="mistake-card">
             <!-- 卡片头部 -->
             <div class="card-header">
-              <el-tag :type="item.type === 1 ? '' : item.type === 2 ? 'warning' : 'info'" size="small">
-                {{ item.typeLabel }}
+              <el-tag :type="getTypeTagType(item.questionType)" size="small">
+                {{ getTypeLabel(item.questionType) }}
               </el-tag>
-              <span class="exam-tag">{{ item.examName }}</span>
+              <span class="exam-tag">{{ item.courseName }}</span>
             </div>
 
             <!-- 题目预览 -->
             <div class="card-content">
               <p class="question-text">{{ item.questionContent }}</p>
-              <div class="time-info">收录时间：{{ item.recordTime }}</div>
+              <div class="time-info">
+                收录时间：{{ formatTime(item.createTime) }}
+                <span v-if="item.wrongCount > 1" class="wrong-count">（错{{ item.wrongCount }}次）</span>
+              </div>
+            </div>
+
+            <!-- 选项展示（选择题） -->
+            <div v-if="[1, 2].includes(item.questionType) && item.options" class="options-panel">
+              <div v-for="(opt, oIdx) in parseOptions(item.options)" :key="oIdx" class="option-item">
+                <span class="option-label">{{ String.fromCharCode(65 + oIdx) }}.</span>
+                <span>{{ opt }}</span>
+              </div>
             </div>
 
             <!-- 解析区域 (折叠) -->
@@ -156,13 +223,13 @@ onMounted(() => {
               <div v-if="item.showAnalysis" class="analysis-panel">
                 <div class="panel-item">
                   <span class="label text-green">正确答案：</span>
-                  <span class="value">{{ item.correctAnswer }}</span>
+                  <span class="value">{{ formatAnswer(item.correctAnswer, item.questionType) }}</span>
                 </div>
                 <div class="panel-item">
                   <span class="label text-red">我的答案：</span>
-                  <span class="value">{{ item.myAnswer }}</span>
+                  <span class="value">{{ formatAnswer(item.myAnswer, item.questionType) || '未作答' }}</span>
                 </div>
-                <div class="panel-item column">
+                <div v-if="item.analysis" class="panel-item column">
                   <span class="label text-orange">题目解析：</span>
                   <p class="desc">{{ item.analysis }}</p>
                 </div>
@@ -187,7 +254,7 @@ onMounted(() => {
       </el-row>
 
       <!-- 空状态 -->
-      <div v-if="!loading && list.length === 0" class="empty-box">
+      <div v-if="!loading && filteredList.length === 0" class="empty-box">
         <el-empty description="太棒了，目前没有错题！" />
       </div>
     </div>
@@ -283,6 +350,31 @@ onMounted(() => {
 .time-info {
   font-size: 12px;
   color: #c0c4cc;
+}
+
+.wrong-count {
+  color: #f56c6c;
+  font-weight: 500;
+}
+
+/* Options Panel */
+.options-panel {
+  padding: 0 16px 12px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.option-item {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.option-label {
+  font-weight: 500;
+  color: #909399;
+  min-width: 20px;
 }
 
 /* Analysis Panel */

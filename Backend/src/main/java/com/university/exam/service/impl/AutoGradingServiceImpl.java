@@ -163,6 +163,7 @@ public class AutoGradingServiceImpl implements AutoGradingService {
                                 mb.setUserId(record.getUserId());
                                 mb.setQuestionId(q.getId());
                                 mb.setCourseId(q.getCourseId());
+                                mb.setPublishId(record.getPublishId()); // 关联考试发布ID
                                 mb.setLastWrongAnswer(detail.getStudentAnswer());
                                 mb.setCreateBy(record.getUserId());
                                 mb.setUpdateBy(record.getUserId());

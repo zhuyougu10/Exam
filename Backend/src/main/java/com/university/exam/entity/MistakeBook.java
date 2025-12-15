@@ -44,6 +44,12 @@ public class MistakeBook implements Serializable {
     private Long courseId;
 
     /**
+     * 考试发布ID（用于关联考试设置）
+     */
+    @TableField("publish_id")
+    private Long publishId;
+
+    /**
      * 题目ID
      */
     @TableField("question_id")

@@ -115,13 +115,7 @@
         </div>
 
         <div class="navbar-right">
-          <el-tooltip content="消息通知" effect="dark" placement="bottom">
-            <div class="right-menu-item">
-              <el-badge :value="3" class="badge-item" type="danger">
-                <el-icon :size="20"><Bell /></el-icon>
-              </el-badge>
-            </div>
-          </el-tooltip>
+          <Notification />
 
           <el-tooltip content="全屏" effect="dark" placement="bottom">
             <div class="right-menu-item hover-effect">
@@ -174,10 +168,11 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
+import Notification from '@/components/Notification/index.vue'
 import {
   Fold, Expand, User, DataAnalysis, Document, Collection,
   UserFilled, FolderOpened, DocumentCopy,
-  Setting, Management, Notebook, Cpu, Bell, FullScreen, CaretBottom, SwitchButton
+  Setting, Management, Notebook, Cpu, FullScreen, CaretBottom, SwitchButton
 } from '@element-plus/icons-vue'
 
 const userStore = useUserStore()

@@ -139,6 +139,36 @@ public class PaperController {
         return Result.success(paper);
     }
 
+    /**
+     * 获取试卷详情（含题目列表，用于预览和编辑）
+     */
+    @GetMapping("/{id}/detail")
+    public Result<?> getPaperWithQuestions(@PathVariable Long id) {
+        return Result.success(paperService.getPaperDetail(id));
+    }
+
+    /**
+     * 添加题目到试卷
+     */
+    @PostMapping("/{id}/add-question")
+    @PreAuthorize("hasAnyRole(2, 3)")
+    public Result<?> addQuestionToPaper(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        Long questionId = Long.valueOf(body.get("questionId").toString());
+        java.math.BigDecimal score = new java.math.BigDecimal(body.get("score").toString());
+        paperService.addQuestionToPaper(id, questionId, score, getCurrentUserId());
+        return Result.success("添加成功");
+    }
+
+    /**
+     * 从试卷移除题目
+     */
+    @DeleteMapping("/{paperId}/question/{questionId}")
+    @PreAuthorize("hasAnyRole(2, 3)")
+    public Result<?> removeQuestionFromPaper(@PathVariable Long paperId, @PathVariable Long questionId) {
+        paperService.removeQuestionFromPaper(paperId, questionId, getCurrentUserId());
+        return Result.success("移除成功");
+    }
+
     private Long getCurrentUserId() {
         return (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }

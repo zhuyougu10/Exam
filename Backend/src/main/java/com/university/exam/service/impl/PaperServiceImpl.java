@@ -197,4 +197,130 @@ public class PaperServiceImpl extends ServiceImpl<PaperMapper, Paper> implements
             default: return "未知";
         }
     }
+
+    @Override
+    public PaperDetailVo getPaperDetail(Long paperId) {
+        Paper paper = this.getById(paperId);
+        if (paper == null) {
+            throw new BizException(404, "试卷不存在");
+        }
+
+        PaperDetailVo vo = new PaperDetailVo();
+        vo.setId(paper.getId());
+        vo.setTitle(paper.getTitle());
+        vo.setCourseId(paper.getCourseId());
+        vo.setTotalScore(paper.getTotalScore());
+        vo.setPassScore(paper.getPassScore());
+        vo.setDuration(paper.getDuration());
+        vo.setDifficulty(paper.getDifficulty());
+
+        // 获取题目列表
+        List<PaperQuestion> pqs = paperQuestionService.list(
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<PaperQuestion>()
+                .eq(PaperQuestion::getPaperId, paperId)
+                .orderByAsc(PaperQuestion::getSortOrder)
+        );
+
+        List<Long> questionIds = pqs.stream().map(PaperQuestion::getQuestionId).collect(java.util.stream.Collectors.toList());
+        java.util.Map<Long, Question> questionMap = questionIds.isEmpty() ? java.util.Collections.emptyMap() :
+            questionService.listByIds(questionIds).stream()
+                .collect(java.util.stream.Collectors.toMap(Question::getId, q -> q));
+
+        java.util.Map<Long, PaperQuestion> pqMap = pqs.stream()
+            .collect(java.util.stream.Collectors.toMap(PaperQuestion::getQuestionId, pq -> pq));
+
+        List<QuestionDetailItem> questions = new ArrayList<>();
+        for (PaperQuestion pq : pqs) {
+            Question q = questionMap.get(pq.getQuestionId());
+            if (q == null) continue;
+
+            QuestionDetailItem item = new QuestionDetailItem();
+            item.setId(q.getId());
+            item.setType(q.getType().intValue());
+            item.setContent(q.getContent());
+            item.setOptions(q.getOptions());
+            item.setAnswer(q.getAnswer());
+            item.setAnalysis(q.getAnalysis());
+            item.setDifficulty(q.getDifficulty().intValue());
+            item.setScore(pq.getScore());
+            item.setSortOrder(pq.getSortOrder());
+            questions.add(item);
+        }
+        vo.setQuestions(questions);
+
+        return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void addQuestionToPaper(Long paperId, Long questionId, BigDecimal score, Long userId) {
+        Paper paper = this.getById(paperId);
+        if (paper == null) {
+            throw new BizException(404, "试卷不存在");
+        }
+
+        // 检查题目是否已存在
+        long exists = paperQuestionService.count(
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<PaperQuestion>()
+                .eq(PaperQuestion::getPaperId, paperId)
+                .eq(PaperQuestion::getQuestionId, questionId)
+        );
+        if (exists > 0) {
+            throw new BizException(400, "该题目已在试卷中");
+        }
+
+        // 获取最大排序号
+        Integer maxSort = paperQuestionService.list(
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<PaperQuestion>()
+                .eq(PaperQuestion::getPaperId, paperId)
+                .orderByDesc(PaperQuestion::getSortOrder)
+                .last("LIMIT 1")
+        ).stream().findFirst().map(PaperQuestion::getSortOrder).orElse(0);
+
+        // 添加题目
+        PaperQuestion pq = new PaperQuestion();
+        pq.setPaperId(paperId);
+        pq.setQuestionId(questionId);
+        pq.setScore(score);
+        pq.setSortOrder(maxSort + 1);
+        pq.setCreateBy(userId);
+        pq.setUpdateBy(userId);
+        pq.setCreateTime(LocalDateTime.now());
+        pq.setUpdateTime(LocalDateTime.now());
+        paperQuestionService.save(pq);
+
+        // 更新试卷总分
+        paper.setTotalScore(paper.getTotalScore().add(score));
+        paper.setUpdateBy(userId);
+        paper.setUpdateTime(LocalDateTime.now());
+        this.updateById(paper);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeQuestionFromPaper(Long paperId, Long questionId, Long userId) {
+        Paper paper = this.getById(paperId);
+        if (paper == null) {
+            throw new BizException(404, "试卷不存在");
+        }
+
+        // 查找关联记录
+        PaperQuestion pq = paperQuestionService.getOne(
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<PaperQuestion>()
+                .eq(PaperQuestion::getPaperId, paperId)
+                .eq(PaperQuestion::getQuestionId, questionId)
+        );
+        if (pq == null) {
+            throw new BizException(404, "题目不在试卷中");
+        }
+
+        // 删除关联
+        paperQuestionService.removeById(pq.getId());
+
+        // 更新试卷总分
+        paper.setTotalScore(paper.getTotalScore().subtract(pq.getScore()));
+        paper.setUpdateBy(userId);
+        paper.setUpdateTime(LocalDateTime.now());
+        this.updateById(paper);
+    }
 }

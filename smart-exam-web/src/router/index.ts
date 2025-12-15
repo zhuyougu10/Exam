@@ -39,6 +39,21 @@ export const constantRoutes: AppRouteRecordRaw[] = [
     ]
   },
   {
+    path: '/notice',
+    component: () => import('@/layout/index.vue'),
+    hidden: true,
+    children: [
+      {
+        path: '',
+        name: 'NoticeCenter',
+        component: () => import('@/views/common/NoticeCenter.vue'),
+        meta: {
+          title: '消息中心'
+        }
+      }
+    ]
+  },
+  {
     path: '/404',
     name: '404',
     component: () => import('@/views/error/404.vue'),

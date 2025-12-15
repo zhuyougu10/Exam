@@ -206,6 +206,7 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
                         mb.setUserId(userId);
                         mb.setQuestionId(q.getId());
                         mb.setCourseId(q.getCourseId());
+                        mb.setPublishId(record.getPublishId()); // 关联考试发布ID
                         mb.setLastWrongAnswer(item.getUserAnswer());
                         mb.setWrongCount(1);
                         mb.setCreateBy(userId);

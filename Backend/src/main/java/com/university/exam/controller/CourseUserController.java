@@ -4,16 +4,23 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.university.exam.common.exception.BizException;
 import com.university.exam.common.result.Result;
+import com.university.exam.entity.Course;
 import com.university.exam.entity.CourseUser;
+import com.university.exam.entity.Dept;
 import com.university.exam.entity.User;
+import com.university.exam.service.CourseService;
 import com.university.exam.service.CourseUserService;
+import com.university.exam.service.DeptService;
 import com.university.exam.service.UserService;
+import com.university.exam.common.utils.JwtUtils;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -21,6 +28,8 @@ import java.util.stream.Collectors;
 /**
  * 课程成员管理控制器
  * 处理学生选课、老师排课等逻辑
+ * sys_course_user.role: 1-学生, 2-教师
+ * sys_user.role: 1-学生, 2-教师, 3-管理员
  *
  * @author Senior Backend Engineer
  * @since 2025-12-14
@@ -28,22 +37,104 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/course/user")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole(1)") // 仅管理员可操作排课
+@PreAuthorize("hasRole(3)") // 仅管理员可操作排课
 public class CourseUserController {
 
     private final CourseUserService courseUserService;
     private final UserService userService;
+    private final DeptService deptService;
+    private final CourseService courseService;
+    private final JwtUtils jwtUtils;
+
+    /**
+     * 获取当前用户已加入的课程列表
+     * 用于教师端知识库、题库等页面筛选
+     */
+    @GetMapping("/my-courses")
+    @PreAuthorize("hasAnyRole(2, 3)") // 教师和管理员
+    public Result<?> getMyCourses(HttpServletRequest request) {
+        Long userId = jwtUtils.getUserIdFromToken(getToken(request));
+        
+        // 查询用户加入的课程ID列表
+        List<CourseUser> courseUsers = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
+                .eq(CourseUser::getUserId, userId));
+        
+        if (courseUsers.isEmpty()) {
+            return Result.success(new ArrayList<>());
+        }
+        
+        List<Long> courseIds = courseUsers.stream().map(CourseUser::getCourseId).distinct().toList();
+        
+        // 查询课程详情
+        List<Course> courses = courseService.listByIds(courseIds);
+        
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Course course : courses) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", course.getId());
+            item.put("courseName", course.getCourseName());
+            item.put("courseCode", course.getCourseCode());
+            result.add(item);
+        }
+        
+        return Result.success(result);
+    }
+
+    /**
+     * 获取课程关联的班级列表（已有学生加入的班级）
+     * 用于考试发布时筛选可选班级
+     */
+    @GetMapping("/depts")
+    @PreAuthorize("hasAnyRole(2, 3)") // 教师和管理员都可访问
+    public Result<?> getCourseDepts(@RequestParam Long courseId) {
+        // 1. 获取课程中所有学生的ID
+        List<CourseUser> courseUsers = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
+                .eq(CourseUser::getCourseId, courseId)
+                .eq(CourseUser::getRole, 1)); // 只查学生
+        
+        if (courseUsers.isEmpty()) {
+            return Result.success(new ArrayList<>(), "该课程暂无学生");
+        }
+        
+        // 2. 获取这些学生所属的部门ID
+        List<Long> userIds = courseUsers.stream().map(CourseUser::getUserId).toList();
+        List<User> students = userService.listByIds(userIds);
+        List<Long> deptIds = students.stream()
+                .map(User::getDeptId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        
+        if (deptIds.isEmpty()) {
+            return Result.success(new ArrayList<>());
+        }
+        
+        // 3. 获取部门信息并构建树形结构
+        List<Dept> depts = deptService.listByIds(deptIds);
+        
+        // 返回扁平列表，前端可直接使用
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Dept dept : depts) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", dept.getId());
+            item.put("deptName", dept.getDeptName());
+            item.put("category", dept.getCategory());
+            result.add(item);
+        }
+        
+        return Result.success(result);
+    }
 
     /**
      * 获取某门课程的成员列表
      * @param courseId 课程ID
-     * @param role 角色 (2-老师, 3-学生, 不传查所有)
+     * @param role 角色 (1-学生, 2-教师, 不传查所有)
      */
     @GetMapping("/list")
     public Result<?> getCourseMembers(@RequestParam Long courseId,
                                       @RequestParam(required = false) Integer role,
                                       @RequestParam(defaultValue = "1") Integer page,
-                                      @RequestParam(defaultValue = "10") Integer size) {
+                                      @RequestParam(defaultValue = "100") Integer size) {
         
         Page<CourseUser> pageParam = new Page<>(page, size);
         LambdaQueryWrapper<CourseUser> query = new LambdaQueryWrapper<CourseUser>()
@@ -56,24 +147,37 @@ public class CourseUserController {
 
         Page<CourseUser> result = courseUserService.page(pageParam, query);
 
-        // 填充用户详情 (姓名、学号等)
+        // 填充用户详情
+        List<Map<String, Object>> records = new ArrayList<>();
         if (!result.getRecords().isEmpty()) {
             List<Long> userIds = result.getRecords().stream().map(CourseUser::getUserId).toList();
             Map<Long, User> userMap = userService.listByIds(userIds).stream()
                     .collect(Collectors.toMap(User::getId, u -> u));
 
-            // 这里可以封装一个 VO，为了简单直接返回 Map 或增强 Entity (不推荐直接改Entity，实际项目建议用 VO)
-            // 这里演示逻辑，暂且假设前端通过 userId 二次查询或这里做简单组装
-            result.getRecords().forEach(cu -> {
+            for (CourseUser cu : result.getRecords()) {
+                Map<String, Object> record = new HashMap<>();
+                record.put("id", cu.getId());
+                record.put("courseId", cu.getCourseId());
+                record.put("userId", cu.getUserId());
+                record.put("role", cu.getRole());
+                record.put("semester", cu.getSemester());
+                record.put("createTime", cu.getCreateTime());
+                
                 User u = userMap.get(cu.getUserId());
                 if (u != null) {
-                    // 注意：Entity 中需要有 @TableField(exist=false) private String realName;
-                    // 或者直接在这里构造 Map 返回。为了不改 Entity，我们假设前端只拿 userId 够用，或者我们用 Map 返回。
+                    record.put("username", u.getUsername());
+                    record.put("realName", u.getRealName());
+                    record.put("avatar", u.getAvatar());
                 }
-            });
+                records.add(record);
+            }
         }
         
-        return Result.success(result);
+        Map<String, Object> response = new HashMap<>();
+        response.put("records", records);
+        response.put("total", result.getTotal());
+        
+        return Result.success(response);
     }
 
     /**
@@ -90,13 +194,18 @@ public class CourseUserController {
             throw new BizException(400, "该用户已在课程中");
         }
         
+        // 设置默认学期
+        if (courseUser.getSemester() == null || courseUser.getSemester().isEmpty()) {
+            courseUser.setSemester(getCurrentSemester());
+        }
+        
         courseUserService.save(courseUser);
         return Result.success(null, "添加成功");
     }
 
     /**
-     * 批量导入：将某个班级(Dept)的所有学生导入课程
-     * 核心缺失功能补充
+     * 批量导入：将某个部门及其所有子部门下的学生导入课程
+     * 支持选择学院/系级别，自动导入下属所有班级的学生
      */
     @PostMapping("/import-dept")
     @Transactional(rollbackFor = Exception.class)
@@ -108,28 +217,35 @@ public class CourseUserController {
             throw new BizException(400, "参数错误");
         }
 
-        // 1. 查找该部门下的所有学生 (Role=3)
+        // 1. 获取该部门及其所有子部门的ID列表
+        List<Long> allDeptIds = new ArrayList<>();
+        allDeptIds.add(deptId);
+        collectChildDeptIds(deptId, allDeptIds);
+
+        // 2. 查找这些部门下的所有学生 (sys_user.role=1 表示学生)
         List<User> students = userService.list(new LambdaQueryWrapper<User>()
-                .eq(User::getDeptId, deptId)
-                .eq(User::getRole, 3));
+                .in(User::getDeptId, allDeptIds)
+                .eq(User::getRole, 1));
         
         if (students.isEmpty()) {
-            return Result.success(0, "该班级暂无学生");
+            return Result.success(0, "该部门及其子部门下暂无学生");
         }
 
-        // 2. 查找该课程已有的学生ID，避免重复
+        // 3. 查找该课程已有的学生ID，避免重复
         List<Long> existingUserIds = courseUserService.list(new LambdaQueryWrapper<CourseUser>()
                 .eq(CourseUser::getCourseId, courseId))
                 .stream().map(CourseUser::getUserId).toList();
 
-        // 3. 过滤出需要新增的学生
+        // 4. 过滤出需要新增的学生
+        String semester = getCurrentSemester();
         List<CourseUser> toAdd = new ArrayList<>();
         for (User stu : students) {
             if (!existingUserIds.contains(stu.getId())) {
                 CourseUser cu = new CourseUser();
                 cu.setCourseId(courseId);
                 cu.setUserId(stu.getId());
-                cu.setRole((byte) 3); // 学生
+                cu.setRole((byte) 1); // sys_course_user.role=1 表示学生
+                cu.setSemester(semester);
                 toAdd.add(cu);
             }
         }
@@ -142,6 +258,18 @@ public class CourseUserController {
     }
 
     /**
+     * 递归收集所有子部门ID
+     */
+    private void collectChildDeptIds(Long parentId, List<Long> result) {
+        List<Dept> children = deptService.list(new LambdaQueryWrapper<Dept>()
+                .eq(Dept::getParentId, parentId));
+        for (Dept child : children) {
+            result.add(child.getId());
+            collectChildDeptIds(child.getId(), result);
+        }
+    }
+
+    /**
      * 移除成员
      */
     @DeleteMapping("/remove")
@@ -150,5 +278,33 @@ public class CourseUserController {
                 .eq(CourseUser::getCourseId, courseId)
                 .eq(CourseUser::getUserId, userId));
         return Result.success(null, "移除成功");
+    }
+
+    /**
+     * 获取当前学期（格式如：2024-2025-1）
+     */
+    private String getCurrentSemester() {
+        java.time.LocalDate now = java.time.LocalDate.now();
+        int year = now.getYear();
+        int month = now.getMonthValue();
+        // 9月-次年1月为第一学期，2月-8月为第二学期
+        if (month >= 9) {
+            return year + "-" + (year + 1) + "-1";
+        } else if (month <= 1) {
+            return (year - 1) + "-" + year + "-1";
+        } else {
+            return (year - 1) + "-" + year + "-2";
+        }
+    }
+
+    /**
+     * 从请求头中获取Token
+     */
+    private String getToken(HttpServletRequest request) {
+        String token = request.getHeader("Authorization");
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+        return token;
     }
 }

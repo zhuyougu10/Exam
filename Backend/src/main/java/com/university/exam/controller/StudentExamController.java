@@ -1,6 +1,5 @@
 package com.university.exam.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.university.exam.common.dto.student.ExamPaperVo;
 import com.university.exam.common.dto.student.StudentExamDto;
 import com.university.exam.common.dto.student.SubmitExamRequest;
@@ -18,7 +17,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -49,6 +47,30 @@ public class StudentExamController {
 
         List<StudentExamDto> list = publishService.listStudentExams(userId, deptId);
         return Result.success(list);
+    }
+
+    /**
+     * 验证考试密码
+     */
+    @PostMapping("/verify-password/{publishId}")
+    public Result<Boolean> verifyPassword(@PathVariable Long publishId, @RequestBody java.util.Map<String, String> body) {
+        Publish publish = publishService.getById(publishId);
+        if (publish == null) {
+            throw new BizException(404, "考试不存在");
+        }
+        
+        String inputPassword = body.get("password");
+        // 如果考试没有设置密码，直接通过
+        if (publish.getPassword() == null || publish.getPassword().isEmpty()) {
+            return Result.success(true, "无需密码");
+        }
+        
+        // 验证密码
+        if (publish.getPassword().equals(inputPassword)) {
+            return Result.success(true, "密码正确");
+        } else {
+            throw new BizException(400, "密码错误，请重新输入");
+        }
     }
 
     /**

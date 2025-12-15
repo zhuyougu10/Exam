@@ -1,76 +1,166 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Bell, Check } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
+import request from '@/utils/request'
+import { useNoticeWebSocket } from '@/hooks/useWebSocket'
+import { getWebSocketInstance } from '@/utils/websocket'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+import 'dayjs/locale/zh-cn'
+
+dayjs.extend(relativeTime)
+dayjs.locale('zh-cn')
 
 interface NoticeItem {
   id: number
   title: string
   content: string
-  time: string
+  createTime: string
   isRead: boolean
-  type: 'system' | 'exam' | 'course'
+  type: number
 }
 
+const router = useRouter()
 const list = ref<NoticeItem[]>([])
 const loading = ref(false)
+const unreadCount = ref(0)
+const popoverRef = ref()
 
-const unreadCount = computed(() => list.value.filter(item => !item.isRead).length)
+// 跳转到消息中心
+const goToNoticeCenter = () => {
+  popoverRef.value?.hide()
+  router.push('/notice')
+}
 
-const fetchNotices = () => {
+// WebSocket连接
+const { 
+  status: wsStatus, 
+  isConnected: wsConnected, 
+  init: initWebSocket, 
+  cleanup: cleanupWebSocket,
+  setNotices,
+  setUnreadCount
+} = useNoticeWebSocket()
+
+// 格式化时间为相对时间
+const formatTime = (time: string) => {
+  if (!time) return ''
+  return dayjs(time).fromNow()
+}
+
+// 获取通知列表
+const fetchNotices = async () => {
   loading.value = true
-  // 模拟 API 请求
-  setTimeout(() => {
-    list.value = [
-      {
-        id: 1,
-        title: 'Java高级程序设计考试即将开始',
-        content: '您报名的考试将在 30 分钟后开始，请做好准备。',
-        time: '10分钟前',
-        isRead: false,
-        type: 'exam'
-      },
-      {
-        id: 2,
-        title: '系统维护通知',
-        content: '系统将于今晚 02:00 进行升级维护，预计耗时 2 小时。',
-        time: '2小时前',
-        isRead: false,
-        type: 'system'
-      },
-      {
-        id: 3,
-        title: '您的试卷《数据结构期中》已批改',
-        content: '点击查看详细成绩分析。',
-        time: '昨天',
-        isRead: true,
-        type: 'exam'
-      }
-    ]
+  try {
+    const res: any = await request.get('/notice/my-list', {
+      params: { page: 1, size: 20 }
+    })
+    list.value = (res.records || []).map((item: any) => ({
+      ...item,
+      isRead: item.isRead || false
+    }))
+    unreadCount.value = res.unreadCount || 0
+    setNotices(list.value)
+    setUnreadCount(unreadCount.value)
+  } catch (error) {
+    console.error('获取通知列表失败:', error)
+  } finally {
     loading.value = false
-  }, 500)
-}
-
-const handleMarkAllRead = () => {
-  list.value.forEach(item => item.isRead = true)
-  ElMessage.success('全部已读')
-}
-
-const handleItemClick = (item: NoticeItem) => {
-  if (!item.isRead) {
-    item.isRead = true
   }
-  console.log('Clicked:', item)
+}
+
+// 标记全部已读
+const handleMarkAllRead = async () => {
+  try {
+    await request.post('/notice/read-all')
+    list.value.forEach(item => item.isRead = true)
+    unreadCount.value = 0
+    ElMessage.success('全部已读')
+  } catch (error) {
+    console.error('标记全部已读失败:', error)
+  }
+}
+
+// 点击通知项
+const handleItemClick = async (item: NoticeItem) => {
+  if (!item.isRead) {
+    try {
+      const res: any = await request.post(`/notice/read/${item.id}`)
+      item.isRead = true
+      unreadCount.value = res.unreadCount ?? Math.max(0, unreadCount.value - 1)
+    } catch (error) {
+      console.error('标记已读失败:', error)
+    }
+  }
+}
+
+// 处理WebSocket新通知
+const handleNewNotice = (data: any) => {
+  if (data) {
+    // 添加到列表头部
+    list.value.unshift({
+      id: data.id,
+      title: data.title,
+      content: data.content,
+      createTime: data.createTime,
+      isRead: false,
+      type: data.type
+    })
+    unreadCount.value++
+    
+    // 显示桌面通知
+    ElNotification({
+      title: data.title,
+      message: data.content,
+      type: data.type === 2 ? 'warning' : 'info',
+      duration: 5000
+    })
+  }
+}
+
+// 初始化WebSocket连接
+const initWsConnection = () => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    initWebSocket(token)
+    
+    // 注册消息处理器
+    const checkAndRegister = setInterval(() => {
+      const instance = getWebSocketInstance()
+      if (instance?.isConnected) {
+        clearInterval(checkAndRegister)
+        instance.on('notice', handleNewNotice)
+        instance.on('exam_notice', handleNewNotice)
+        instance.on('unread_count', (count: number) => {
+          unreadCount.value = count
+        })
+      }
+    }, 100)
+    
+    setTimeout(() => clearInterval(checkAndRegister), 10000)
+  }
 }
 
 onMounted(() => {
   fetchNotices()
+  initWsConnection()
+})
+
+onUnmounted(() => {
+  const instance = getWebSocketInstance()
+  if (instance) {
+    instance.off('notice', handleNewNotice)
+    instance.off('exam_notice', handleNewNotice)
+  }
 })
 </script>
 
 <template>
   <div class="notification-wrapper">
     <el-popover
+        ref="popoverRef"
         placement="bottom"
         :width="320"
         trigger="click"
@@ -117,7 +207,7 @@ onMounted(() => {
                   <span class="notice-title" :class="{ 'is-read': item.isRead }">
                     {{ item.title }}
                   </span>
-                  <span class="notice-time">{{ item.time }}</span>
+                  <span class="notice-time">{{ formatTime(item.createTime) }}</span>
                 </div>
                 <p class="notice-desc">
                   {{ item.content }}
@@ -134,7 +224,7 @@ onMounted(() => {
 
         <!-- Footer -->
         <div class="notice-footer">
-          <el-button link type="primary" size="small">查看全部消息</el-button>
+          <el-button link type="primary" size="small" @click="goToNoticeCenter">查看全部消息</el-button>
         </div>
       </div>
     </el-popover>

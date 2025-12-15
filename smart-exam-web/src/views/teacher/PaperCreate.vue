@@ -405,8 +405,9 @@ onMounted(() => {
 // Methods
 const fetchCourses = async () => {
   try {
-    const res: any = await request.get('/admin/course/list', { params: { size: 100 } })
-    courseOptions.value = res.records
+    // 只获取当前用户已加入的课程
+    const res: any = await request.get('/course/user/my-courses')
+    courseOptions.value = res || []
   } catch (error) { console.error(error) }
 }
 
@@ -481,9 +482,10 @@ const submitPaper = async () => {
     if (baseForm.mode === 'random') payload.rules = randomRules.value
     else payload.questionList = manualQuestions.value.map(q => ({ questionId: q.id, score: q.score }))
 
-    await request.post(url, payload)
+    const res: any = await request.post(url, payload)
     ElMessage.success('试卷创建成功！')
-    router.push('/teacher/paper-list')
+    // 跳转到试卷列表并自动打开预览弹窗
+    router.push({ path: '/teacher/paper-list', query: { previewPaperId: res.id } })
   } catch (error) { console.error(error) }
   finally { submitting.value = false }
 }

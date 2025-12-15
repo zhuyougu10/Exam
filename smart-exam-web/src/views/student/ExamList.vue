@@ -152,6 +152,24 @@
           </div>
         </div>
 
+        <!-- 密码输入区域 -->
+        <div v-if="currentExam?.needPassword" class="mt-6 bg-orange-50 p-4 rounded-lg border border-orange-200">
+          <div class="flex items-center gap-2 mb-3">
+            <el-icon class="text-orange-500"><Lock /></el-icon>
+            <span class="font-medium text-orange-700">本场考试需要输入密码</span>
+          </div>
+          <el-input
+              v-model="examPassword"
+              type="password"
+              placeholder="请输入考试密码"
+              show-password
+              size="large"
+              :class="{ 'is-error': passwordError }"
+              @keyup.enter="confirmStartExam"
+          />
+          <div v-if="passwordError" class="text-red-500 text-xs mt-2">{{ passwordError }}</div>
+        </div>
+
         <div class="mt-6 flex items-center justify-center gap-2">
           <el-checkbox v-model="isRead" size="large">我已阅读并知晓以上规则</el-checkbox>
         </div>
@@ -164,10 +182,11 @@
               type="primary"
               size="large"
               class="w-48"
-              :disabled="!isRead"
+              :disabled="!isRead || (currentExam?.needPassword && !examPassword)"
+              :loading="verifyingPassword"
               @click="confirmStartExam"
           >
-            进入考试
+            {{ verifyingPassword ? '验证中...' : '进入考试' }}
           </el-button>
         </div>
       </template>
@@ -195,6 +214,9 @@ const examList = ref<any[]>([])
 const noticeDialogVisible = ref(false)
 const currentExam = ref<any>(null)
 const isRead = ref(false)
+const examPassword = ref('')
+const passwordError = ref('')
+const verifyingPassword = ref(false)
 
 // ---------------- 新增：检测 IE 浏览器 ----------------
 const isIEBrowser = () => {
@@ -251,21 +273,51 @@ const handleEnterExam = (exam: any) => {
     return
   }
 
-  // 2. 正常流程
+  // 2. 正常流程 - 重置状态
   currentExam.value = exam
   isRead.value = false
+  examPassword.value = ''
+  passwordError.value = ''
   noticeDialogVisible.value = true
 }
 
-// 确认进入考试 -> 跳转
-const confirmStartExam = () => {
+// 确认进入考试 -> 验证密码 -> 跳转
+const confirmStartExam = async () => {
   if (!currentExam.value) return
-  noticeDialogVisible.value = false
-  // 路由传参：传递 publishId
-  router.push({
-    path: `/student/exam-paper`,
-    query: { publishId: currentExam.value.id }
-  })
+  
+  // 如果需要密码，先验证
+  if (currentExam.value.needPassword) {
+    if (!examPassword.value) {
+      passwordError.value = '请输入考试密码'
+      return
+    }
+    
+    verifyingPassword.value = true
+    passwordError.value = ''
+    
+    try {
+      await request.post(`/exam/verify-password/${currentExam.value.id}`, {
+        password: examPassword.value
+      })
+      // 密码验证成功，跳转
+      noticeDialogVisible.value = false
+      router.push({
+        path: `/student/exam-paper`,
+        query: { publishId: currentExam.value.id }
+      })
+    } catch (error: any) {
+      passwordError.value = error.message || '密码错误，请重新输入'
+    } finally {
+      verifyingPassword.value = false
+    }
+  } else {
+    // 无密码要求，直接跳转
+    noticeDialogVisible.value = false
+    router.push({
+      path: `/student/exam-paper`,
+      query: { publishId: currentExam.value.id }
+    })
+  }
 }
 
 // 查看结果

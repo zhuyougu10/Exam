@@ -10,6 +10,7 @@ import com.university.exam.common.exception.BizException;
 import com.university.exam.common.utils.DifyClient;
 import com.university.exam.entity.*;
 import com.university.exam.service.*;
+import com.university.exam.websocket.WebSocketService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +44,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
     private final NoticeService noticeService;
     private final UserNoticeService userNoticeService;
     private final CourseService courseService;
+    private final WebSocketService webSocketService;
 
     @Autowired
     @Lazy
@@ -189,7 +191,7 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
                                     questionService.saveBatch(validQuestions);
                                     generatedCount += validQuestions.size();
                                     batchSuccess = true;
-                                    updateTaskProgress(taskId, generatedCount, totalCount, (byte) 1, null);
+                                    updateTaskProgress(taskId, generatedCount, totalCount, (byte) 1, null, userId);
 
                                     if (StringUtils.hasText(historyDatasetId) && syncText.length() > 0) {
                                         difyClient.createDocumentByText(
@@ -227,20 +229,20 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             }
 
             if (generatedCount == 0) {
-                updateTaskProgress(taskId, 0, totalCount, (byte) 3, "未能生成有效题目");
+                updateTaskProgress(taskId, 0, totalCount, (byte) 3, "未能生成有效题目", userId);
                 sendNotification(userId, "AI 出题失败", "任务 [" + topic + "] 执行失败。");
             } else {
-                updateTaskProgress(taskId, generatedCount, totalCount, (byte) 2, null);
+                updateTaskProgress(taskId, generatedCount, totalCount, (byte) 2, null, userId);
                 sendNotification(userId, "AI 出题完成", "任务 [" + topic + "] 已完成，共生成 " + generatedCount + " 题。");
             }
 
         } catch (Exception e) {
             log.error("AI 出题任务异常", e);
-            updateTaskProgress(taskId, generatedCount, totalCount, (byte) 3, e.getMessage());
+            updateTaskProgress(taskId, generatedCount, totalCount, (byte) 3, e.getMessage(), userId);
         }
     }
 
-    private void updateTaskProgress(Long taskId, int current, int total, byte status, String errorMsg) {
+    private void updateTaskProgress(Long taskId, int current, int total, byte status, String errorMsg, Long userId) {
         AiTask update = new AiTask();
         update.setId(taskId);
         update.setCurrentCount(current);
@@ -248,6 +250,22 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
         if (errorMsg != null) update.setErrorMsg(errorMsg);
         update.setUpdateTime(LocalDateTime.now());
         aiTaskService.updateById(update);
+        
+        // 通过WebSocket推送任务进度
+        Map<String, Object> taskData = new HashMap<>();
+        taskData.put("taskId", taskId);
+        taskData.put("currentCount", current);
+        taskData.put("totalCount", total);
+        taskData.put("status", status);
+        taskData.put("errorMsg", errorMsg);
+        
+        if (status == 2 || status == 3) {
+            // 任务完成或失败
+            webSocketService.pushTaskComplete(userId, taskData);
+        } else {
+            // 进度更新
+            webSocketService.pushTaskProgress(userId, taskData);
+        }
     }
 
     private void sendNotification(Long userId, String title, String content) {
@@ -269,6 +287,9 @@ public class QuestionGenerationServiceImpl implements QuestionGenerationService 
             userNotice.setCreateTime(LocalDateTime.now());
             userNotice.setUpdateTime(LocalDateTime.now());
             userNoticeService.save(userNotice);
+            
+            // 通过WebSocket推送通知
+            webSocketService.pushNoticeToUser(userId, notice);
         } catch (Exception e) {
             log.error("发送通知失败", e);
         }

@@ -29,6 +29,21 @@ public interface PaperService extends IService<Paper> {
      */
     Long manualCreate(ManualPaperRequest request, Long userId);
 
+    /**
+     * 获取试卷详情（含题目列表）
+     */
+    PaperDetailVo getPaperDetail(Long paperId);
+
+    /**
+     * 添加题目到试卷
+     */
+    void addQuestionToPaper(Long paperId, Long questionId, BigDecimal score, Long userId);
+
+    /**
+     * 从试卷移除题目
+     */
+    void removeQuestionFromPaper(Long paperId, Long questionId, Long userId);
+
     // ==================== DTO 定义 (增加校验注解) ====================
 
     @Data
@@ -92,5 +107,30 @@ public interface PaperService extends IService<Paper> {
 
         @DecimalMin(value = "0.1", message = "单题分值必须大于0")
         private BigDecimal score;
+    }
+
+    @Data
+    class PaperDetailVo {
+        private Long id;
+        private String title;
+        private Long courseId;
+        private BigDecimal totalScore;
+        private BigDecimal passScore;
+        private Integer duration;
+        private Byte difficulty;
+        private List<QuestionDetailItem> questions;
+    }
+
+    @Data
+    class QuestionDetailItem {
+        private Long id;
+        private Integer type;
+        private String content;
+        private String options;
+        private String answer;
+        private String analysis;
+        private Integer difficulty;
+        private BigDecimal score;
+        private Integer sortOrder;
     }
 }
