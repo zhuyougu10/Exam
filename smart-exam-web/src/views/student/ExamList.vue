@@ -111,6 +111,67 @@
         <el-empty description="暂无相关考试安排" :image-size="160" />
       </div>
     </div>
+
+    <!-- 考前须知弹窗 -->
+    <el-dialog
+        v-model="noticeDialogVisible"
+        title="考前须知"
+        width="500px"
+        align-center
+        destroy-on-close
+        class="exam-notice-dialog"
+    >
+      <div class="p-4">
+        <div class="flex items-center justify-center mb-6">
+          <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center">
+            <el-icon class="text-blue-500" size="32"><Reading /></el-icon>
+          </div>
+        </div>
+
+        <h3 class="text-center text-lg font-bold text-gray-800 mb-6">
+          {{ currentExam?.title }}
+        </h3>
+
+        <!-- 写死的考前须知内容 -->
+        <div class="space-y-4 text-gray-600 bg-gray-50 p-4 rounded-lg border border-gray-100 text-sm">
+          <div class="flex gap-3">
+            <span class="font-bold text-blue-500">1.</span>
+            <p>请确保网络环境良好，建议使用 Chrome 或 Edge 浏览器。</p>
+          </div>
+          <div class="flex gap-3">
+            <span class="font-bold text-blue-500">2.</span>
+            <p>考试期间<span class="font-bold text-red-500">禁止切屏</span>，系统将自动记录切屏次数，超过限制可能被强制交卷。</p>
+          </div>
+          <div class="flex gap-3">
+            <span class="font-bold text-blue-500">3.</span>
+            <p>请诚信考试，独立完成，系统已开启 AI 监考及反作弊检测。</p>
+          </div>
+          <div class="flex gap-3">
+            <span class="font-bold text-blue-500">4.</span>
+            <p>答题过程中系统会自动保存答案，如遇异常请尝试刷新页面或联系老师。</p>
+          </div>
+        </div>
+
+        <div class="mt-6 flex items-center justify-center gap-2">
+          <el-checkbox v-model="isRead" size="large">我已阅读并知晓以上规则</el-checkbox>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex justify-center pb-4 gap-4">
+          <el-button size="large" @click="noticeDialogVisible = false">再等等</el-button>
+          <el-button
+              type="primary"
+              size="large"
+              class="w-48"
+              :disabled="!isRead"
+              @click="confirmStartExam"
+          >
+            进入考试
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -119,7 +180,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Refresh, Calendar, Timer, RefreshLeft, Right, Clock,
-  VideoPlay, CircleCheck, Lock
+  VideoPlay, CircleCheck, Lock, Reading
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
@@ -129,6 +190,11 @@ const router = useRouter()
 const loading = ref(false)
 const activeTab = ref('all')
 const examList = ref<any[]>([])
+
+// 弹窗相关状态
+const noticeDialogVisible = ref(false)
+const currentExam = ref<any>(null)
+const isRead = ref(false)
 
 // 获取数据
 const fetchData = async () => {
@@ -160,12 +226,21 @@ const handleTabChange = () => {
   // 可以在这里重新请求后端带状态的接口，目前采用前端过滤
 }
 
-// 进入考试
+// 点击进入考试按钮 -> 弹出须知
 const handleEnterExam = (exam: any) => {
+  currentExam.value = exam
+  isRead.value = false
+  noticeDialogVisible.value = true
+}
+
+// 确认进入考试 -> 跳转
+const confirmStartExam = () => {
+  if (!currentExam.value) return
+  noticeDialogVisible.value = false
   // 路由传参：传递 publishId
   router.push({
     path: `/student/exam-paper`,
-    query: { publishId: exam.id }
+    query: { publishId: currentExam.value.id }
   })
 }
 
