@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/exam/publish")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole('2', '3')")
 public class ExamPublishController {
 
     private final PublishService publishService;
@@ -42,7 +43,6 @@ public class ExamPublishController {
      * POST /api/exam/publish
      */
     @PostMapping
-    @PreAuthorize("hasAnyRole(2, 3)")
     public Result<?> publish(@RequestBody PublishService.PublishRequest request) {
         Long userId = getCurrentUserId();
         
@@ -97,7 +97,6 @@ public class ExamPublishController {
      * DELETE /api/exam/publish/{id}
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole(2, 3)")
     public Result<?> delete(@PathVariable Long id) {
         Publish publish = publishService.getById(id);
         if (publish == null) throw new BizException(404, "发布记录不存在");

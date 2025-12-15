@@ -51,7 +51,7 @@ public class CourseUserController {
      * 用于教师端知识库、题库等页面筛选
      */
     @GetMapping("/my-courses")
-    @PreAuthorize("hasAnyRole(2, 3)") // 教师和管理员
+    @PreAuthorize("hasAnyRole('2', '3')") // 教师和管理员
     public Result<?> getMyCourses(HttpServletRequest request) {
         Long userId = jwtUtils.getUserIdFromToken(getToken(request));
         
@@ -85,7 +85,7 @@ public class CourseUserController {
      * 用于考试发布时筛选可选班级
      */
     @GetMapping("/depts")
-    @PreAuthorize("hasAnyRole(2, 3)") // 教师和管理员都可访问
+    @PreAuthorize("hasAnyRole('2', '3')") // 教师和管理员都可访问
     public Result<?> getCourseDepts(@RequestParam Long courseId) {
         // 1. 获取课程中所有学生的ID
         List<CourseUser> courseUsers = courseUserService.list(new LambdaQueryWrapper<CourseUser>()

@@ -113,7 +113,7 @@ public class QuestionController {
     }
 
     @PostMapping("/question/import")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> importQuestions(@RequestParam("file") MultipartFile file,
                                      @RequestParam("courseId") Long courseId) {
         Long userId = getCurrentUserId();
@@ -124,7 +124,7 @@ public class QuestionController {
     // ==================== AI 生成相关 ====================
 
     @PostMapping("/question/ai-generate")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> startAiGeneration(@RequestBody AiGenerateRequest req, HttpServletRequest request) {
         Long userId = getCurrentUserId();
         
@@ -154,7 +154,7 @@ public class QuestionController {
     }
 
     @DeleteMapping("/question/task/clear")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> clearFinishedTasks() {
         Long userId = getCurrentUserId();
         aiTaskService.remove(new LambdaQueryWrapper<AiTask>()
@@ -166,7 +166,7 @@ public class QuestionController {
     // ==================== 题库 CRUD ====================
 
     @PostMapping("/question/create")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> createQuestion(@RequestBody Question question) {
         if (StrUtil.isBlank(question.getContent())) {
             throw new BizException(400, "题目内容不能为空");
@@ -186,7 +186,7 @@ public class QuestionController {
     }
 
     @PutMapping("/question/update")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> updateQuestion(@RequestBody Question question) {
         if (question.getId() == null) throw new BizException(400, "ID不能为空");
         Long userId = getCurrentUserId();
@@ -210,7 +210,7 @@ public class QuestionController {
     }
 
     @DeleteMapping("/question/batch")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> batchDelete(@RequestBody List<Long> ids) {
         if (ids == null || ids.isEmpty()) throw new BizException(400, "ID列表不能为空");
         Long userId = getCurrentUserId();

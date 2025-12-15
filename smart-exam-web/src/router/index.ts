@@ -199,6 +199,15 @@ export const asyncRoutes: AppRouteRecordRaw[] = [
         meta: {
           title: '成绩统计'
         }
+      },
+      {
+        path: 'proctor',
+        name: 'teacher-proctor',
+        component: () => import('@/views/teacher/Proctor.vue'),
+        meta: {
+          title: '在线监考',
+          hidden: true
+        }
       }
     ]
   },

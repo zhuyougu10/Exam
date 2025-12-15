@@ -7,14 +7,14 @@ import com.university.exam.service.ProctorLogService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * 监考管理控制器
- * 处理监考日志上报等操作
+ * 处理监考日志上报和教师监考查询
  *
  * @author MySQL数据库架构师
  * @since 2025-12-13
@@ -28,7 +28,7 @@ public class ProctorController {
     private final JwtUtils jwtUtils;
 
     /**
-     * 上报监考日志
+     * 上报监考日志（学生端）
      * POST /api/proctor/log
      *
      * @param dto     日志数据
@@ -42,6 +42,45 @@ public class ProctorController {
 
         proctorLogService.handleProctorLog(dto, userId);
         return Result.success(null, "日志上报成功");
+    }
+
+    /**
+     * 获取考试监考日志列表（教师端）
+     * GET /api/proctor/logs?publishId=xxx
+     *
+     * @param publishId 考试发布ID
+     * @return 监考日志列表
+     */
+    @GetMapping("/logs")
+    public Result<List<Map<String, Object>>> getProctorLogs(@RequestParam Long publishId) {
+        List<Map<String, Object>> logs = proctorLogService.getProctorLogsByPublishId(publishId);
+        return Result.success(logs);
+    }
+
+    /**
+     * 获取考试学生状态列表（教师端）
+     * GET /api/proctor/students?publishId=xxx
+     *
+     * @param publishId 考试发布ID
+     * @return 学生状态列表
+     */
+    @GetMapping("/students")
+    public Result<List<Map<String, Object>>> getExamStudents(@RequestParam Long publishId) {
+        List<Map<String, Object>> students = proctorLogService.getExamStudentStatus(publishId);
+        return Result.success(students);
+    }
+
+    /**
+     * 获取考试监考统计（教师端）
+     * GET /api/proctor/stats?publishId=xxx
+     *
+     * @param publishId 考试发布ID
+     * @return 监考统计数据
+     */
+    @GetMapping("/stats")
+    public Result<Map<String, Object>> getProctorStats(@RequestParam Long publishId) {
+        Map<String, Object> stats = proctorLogService.getProctorStats(publishId);
+        return Result.success(stats);
     }
 
     private String getToken(HttpServletRequest request) {

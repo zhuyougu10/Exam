@@ -67,8 +67,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="操作" width="280" align="center" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="isExamRunning(row)" type="success" link icon="Monitor" @click="handleProctor(row)">
+              监考
+            </el-button>
+            <el-divider v-if="isExamRunning(row)" direction="vertical" />
             <el-button type="primary" link icon="DataAnalysis" @click="handleAnalysis(row)">
               查看数据
             </el-button>
@@ -244,19 +248,21 @@ const rules = {
   targetDeptIds: [{ required: true, message: '请选择参考班级', trigger: 'change' }]
 }
 
-onMounted(() => {
-  fetchPapers()
+onMounted(async () => {
+  await fetchPapers()
   fetchDepts()
   fetchData()
   checkRouteParams()
 })
 
-const checkRouteParams = () => {
+const checkRouteParams = async () => {
   const { paperId, paperTitle } = route.query
   if (paperId) {
     handleAdd()
     form.paperId = Number(paperId)
     form.title = paperTitle ? `${paperTitle} - 考试` : ''
+    // 从试卷管理跳转过来时，需要手动触发加载课程班级
+    await onPaperSelect(Number(paperId))
   }
 }
 
@@ -398,6 +404,10 @@ const handleDelete = async (row: any) => {
 
 const handleAnalysis = (row: any) => {
   router.push({ path: '/teacher/analysis', query: { publishId: row.id } })
+}
+
+const handleProctor = (row: any) => {
+  router.push({ path: '/teacher/proctor', query: { publishId: row.id } })
 }
 
 const handleSizeChange = (val: number) => {

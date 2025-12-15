@@ -115,4 +115,25 @@ public class WebSocketMessage {
     public static WebSocketMessage fileStatus(Object fileData) {
         return success("file_status", "文件状态更新", fileData);
     }
+
+    /**
+     * 创建监考日志消息
+     */
+    public static WebSocketMessage proctorLog(Object logData) {
+        return success("proctor_log", "监考异常提醒", logData);
+    }
+
+    /**
+     * 创建学生状态更新消息（上线/离线/交卷等）
+     */
+    public static WebSocketMessage studentStatus(Object statusData) {
+        return success("student_status", "学生状态变更", statusData);
+    }
+
+    /**
+     * 创建监考统计更新消息
+     */
+    public static WebSocketMessage proctorStats(Object statsData) {
+        return success("proctor_stats", "监考统计更新", statsData);
+    }
 }

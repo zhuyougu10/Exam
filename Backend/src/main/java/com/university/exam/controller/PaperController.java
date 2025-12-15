@@ -42,7 +42,7 @@ public class PaperController {
      * 智能/随机组卷
      */
     @PostMapping("/random-create")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> randomCreate(@Valid @RequestBody PaperService.RandomPaperRequest request) {
         Long userId = getCurrentUserId();
         Long paperId = paperService.randomCreate(request, userId);
@@ -53,7 +53,7 @@ public class PaperController {
      * 手动组卷
      */
     @PostMapping("/manual-create")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> manualCreate(@Valid @RequestBody PaperService.ManualPaperRequest request) {
         Long userId = getCurrentUserId();
         Long paperId = paperService.manualCreate(request, userId);
@@ -104,7 +104,7 @@ public class PaperController {
      * 删除试卷
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> delete(@PathVariable Long id) {
         // 检查是否已发布
         boolean isPublished = publishService.checkIsPublished(id);
@@ -151,7 +151,7 @@ public class PaperController {
      * 添加题目到试卷
      */
     @PostMapping("/{id}/add-question")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> addQuestionToPaper(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         Long questionId = Long.valueOf(body.get("questionId").toString());
         java.math.BigDecimal score = new java.math.BigDecimal(body.get("score").toString());
@@ -163,7 +163,7 @@ public class PaperController {
      * 从试卷移除题目
      */
     @DeleteMapping("/{paperId}/question/{questionId}")
-    @PreAuthorize("hasAnyRole(2, 3)")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<?> removeQuestionFromPaper(@PathVariable Long paperId, @PathVariable Long questionId) {
         paperService.removeQuestionFromPaper(paperId, questionId, getCurrentUserId());
         return Result.success("移除成功");

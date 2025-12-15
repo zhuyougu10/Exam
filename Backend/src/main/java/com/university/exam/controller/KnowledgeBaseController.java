@@ -20,7 +20,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/knowledge")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole(2, 3)")
+@PreAuthorize("hasAnyRole('2', '3')")
 public class KnowledgeBaseController {
 
     private final KnowledgeFileService knowledgeFileService;

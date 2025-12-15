@@ -197,7 +197,7 @@ public class NoticeController {
      * 发布通知（管理员/教师）
      */
     @PostMapping("/publish")
-    @PreAuthorize("hasAnyRole(3, 2)")
+    @PreAuthorize("hasAnyRole('3', '2')")
     public Result<Map<String, Object>> publishNotice(@RequestBody PublishNoticeRequest req, HttpServletRequest request) {
         Long senderId = getUserId(request);
         

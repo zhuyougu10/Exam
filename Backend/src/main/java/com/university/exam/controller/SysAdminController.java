@@ -42,7 +42,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole(3)")
+@PreAuthorize("hasRole('3')")
 public class SysAdminController {
 
     private final UserService userService;
@@ -219,6 +219,7 @@ public class SysAdminController {
      * @return 部门树形结构数据
      */
     @GetMapping("/dept/tree")
+    @PreAuthorize("hasAnyRole('2', '3')")
     public Result<List<Dept>> getDeptTree() {
         // 调用 DeptService 中已实现的递归构建树逻辑
         List<Dept> tree = deptService.getDeptTree();

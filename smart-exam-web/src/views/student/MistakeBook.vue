@@ -63,31 +63,38 @@ const getTypeTagType = (type: number) => {
 
 // 格式化答案显示
 const formatAnswer = (answer: string, type: number, options?: string) => {
-  if (!answer) return '-'
+  if (!answer && answer !== '0') return '-'
   
-  // 判断题
+  // 判断题: 0=错误, 1=正确
   if (type === 3) {
     return answer === '1' || answer === 'true' || answer === '正确' ? '正确' : '错误'
   }
   
-  // 单选/多选题：将索引转换为字母
+  // 单选/多选题：将索引转换为字母 (0=A, 1=B, 2=C, 3=D)
   if (type === 1 || type === 2) {
     try {
-      // 尝试解析JSON数组格式
+      // 尝试解析JSON数组格式 [0,1,2]
       const parsed = JSON.parse(answer)
       if (Array.isArray(parsed)) {
         return parsed.map(i => String.fromCharCode(65 + Number(i))).join(', ')
       }
+      // 单个数字（JSON.parse("2") 返回 2）
+      if (typeof parsed === 'number' && parsed >= 0 && parsed < 26) {
+        return String.fromCharCode(65 + parsed)
+      }
     } catch {
-      // 尝试逗号分隔格式
-      if (answer.includes(',')) {
-        return answer.split(',').map(i => String.fromCharCode(65 + Number(i.trim()))).join(', ')
-      }
-      // 单个数字
-      const num = parseInt(answer)
-      if (!isNaN(num) && num >= 0 && num < 26) {
-        return String.fromCharCode(65 + num)
-      }
+      // JSON解析失败，尝试其他格式
+    }
+    
+    // 尝试逗号分隔格式 "0,1,2"
+    if (answer.includes(',')) {
+      return answer.split(',').map(i => String.fromCharCode(65 + Number(i.trim()))).join(', ')
+    }
+    
+    // 单个数字字符串 "2"
+    const num = parseInt(answer)
+    if (!isNaN(num) && num >= 0 && num < 26) {
+      return String.fromCharCode(65 + num)
     }
   }
   

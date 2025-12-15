@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/review")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole(2, 3)") // 仅教师和管理员
+@PreAuthorize("hasAnyRole('2', '3')") // 仅教师和管理员
 public class ReviewController {
 
     private final RecordService recordService;

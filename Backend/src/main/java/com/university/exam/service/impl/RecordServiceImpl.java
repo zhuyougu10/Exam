@@ -271,27 +271,36 @@ public class RecordServiceImpl extends ServiceImpl<RecordMapper, Record> impleme
     }
 
     /**
-     * 批量保存错题（简单排重）
+     * 批量保存错题（排重处理，防止并发导致重复键异常）
      */
     private void saveMistakes(List<MistakeBook> list) {
         if (CollUtil.isEmpty(list)) return;
 
         for (MistakeBook mb : list) {
-            // 检查是否已存在
-            long exists = mistakeBookService.count(new LambdaQueryWrapper<MistakeBook>()
-                    .eq(MistakeBook::getUserId, mb.getUserId())
-                    .eq(MistakeBook::getQuestionId, mb.getQuestionId()));
-
-            if (exists > 0) {
-                // 更新错误次数
-                MistakeBook update = new MistakeBook();
-                update.setLastWrongAnswer(mb.getLastWrongAnswer());
-                update.setUpdateTime(LocalDateTime.now());
-                mistakeBookService.update(update, new LambdaQueryWrapper<MistakeBook>()
+            try {
+                // 检查是否已存在
+                MistakeBook existing = mistakeBookService.getOne(new LambdaQueryWrapper<MistakeBook>()
                         .eq(MistakeBook::getUserId, mb.getUserId())
                         .eq(MistakeBook::getQuestionId, mb.getQuestionId()));
-            } else {
-                mistakeBookService.save(mb);
+
+                if (existing != null) {
+                    // 更新错误次数
+                    existing.setWrongCount(existing.getWrongCount() + 1);
+                    existing.setLastWrongAnswer(mb.getLastWrongAnswer());
+                    existing.setUpdateTime(LocalDateTime.now());
+                    mistakeBookService.updateById(existing);
+                } else {
+                    mistakeBookService.save(mb);
+                }
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                // 并发插入导致重复键，改为更新
+                log.warn("错题本并发插入冲突，改为更新: userId={}, questionId={}", mb.getUserId(), mb.getQuestionId());
+                mistakeBookService.update(new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MistakeBook>()
+                        .eq(MistakeBook::getUserId, mb.getUserId())
+                        .eq(MistakeBook::getQuestionId, mb.getQuestionId())
+                        .setSql("wrong_count = wrong_count + 1")
+                        .set(MistakeBook::getLastWrongAnswer, mb.getLastWrongAnswer())
+                        .set(MistakeBook::getUpdateTime, LocalDateTime.now()));
             }
         }
     }
