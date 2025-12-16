@@ -84,7 +84,7 @@
             </div>
 
             <div class="filter-right">
-              <el-button type="warning" class="action-btn" @click="showImportDialog">
+              <el-button type="warning" class="action-btn" @click="handleImport">
                 <el-icon class="mr-1"><Upload /></el-icon> 批量导入
               </el-button>
               <el-button type="success" class="action-btn" @click="handleAdd">
@@ -279,44 +279,83 @@
     </el-dialog>
 
     <!-- 批量导入对话框 -->
-    <el-dialog v-model="importDialogVisible" title="批量导入用户" width="700px" destroy-on-close>
-      <el-alert type="info" :closable="false" show-icon class="mb-4">
-        <template #title>
-          导入说明：每行一个用户，格式为 <b>学号/用户名,姓名,角色(1学生/2教师)</b>，默认密码为 123456
-        </template>
-      </el-alert>
-      <el-form label-width="100px">
-        <el-form-item label="选择部门">
-          <el-tree-select
-            v-model="importDeptId"
-            :data="deptOptions"
-            :props="{ label: 'deptName', value: 'id', children: 'children' }"
-            placeholder="可选，导入用户的所属部门"
-            check-strictly
-            clearable
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="用户数据">
-          <el-input
-            v-model="importText"
-            type="textarea"
-            :rows="10"
-            placeholder="每行一个用户，格式：学号,姓名,角色&#10;例如：&#10;2024001,张三,1&#10;2024002,李四,1&#10;T001,王老师,2"
-          />
-        </el-form-item>
-      </el-form>
-      <div v-if="importResult" class="import-result">
-        <el-tag type="success">成功: {{ importResult.successCount }}</el-tag>
-        <el-tag type="warning" class="ml-2">跳过: {{ importResult.skipCount }}</el-tag>
-        <el-tag type="danger" class="ml-2">失败: {{ importResult.errorCount }}</el-tag>
-        <div v-if="importResult.errors?.length" class="error-list">
-          <div v-for="(err, i) in importResult.errors" :key="i" class="text-danger">{{ err }}</div>
+    <el-dialog
+        title="批量导入用户"
+        v-model="importDialogVisible"
+        width="550px"
+        :close-on-click-modal="false"
+        destroy-on-close
+    >
+      <div class="import-content">
+        <el-alert type="info" :closable="false" show-icon class="mb-4">
+          <template #title>
+            <div>
+              <p style="margin: 0 0 8px 0;">Excel文件格式要求：</p>
+              <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+                <li><strong>用户名</strong>（必填）：唯一标识</li>
+                <li><strong>真实姓名</strong>（必填）</li>
+                <li><strong>密码</strong>：为空则默认 123456</li>
+                <li><strong>角色</strong>：学生/教师/管理员，默认学生</li>
+                <li><strong>部门/班级</strong>：需与系统中部门名称一致</li>
+                <li><strong>手机号</strong>、<strong>邮箱</strong>：选填</li>
+              </ul>
+            </div>
+          </template>
+        </el-alert>
+
+        <el-upload
+            ref="uploadRef"
+            class="upload-area"
+            drag
+            action="#"
+            :auto-upload="false"
+            :limit="1"
+            accept=".xlsx,.xls"
+            :on-change="handleFileChange"
+            :on-exceed="handleExceed"
+        >
+          <el-icon class="el-icon--upload"><Upload /></el-icon>
+          <div class="el-upload__text">
+            将Excel文件拖到此处，或<em>点击上传</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              仅支持 .xlsx 或 .xls 格式文件
+            </div>
+          </template>
+        </el-upload>
+
+        <div class="template-download">
+          <el-button type="primary" link @click="downloadTemplate">
+            <el-icon class="mr-1"><Download /></el-icon> 下载导入模板
+          </el-button>
+        </div>
+
+        <!-- 导入结果 -->
+        <div v-if="importResult" class="import-result">
+          <el-divider content-position="left">导入结果</el-divider>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="成功">
+              <el-tag type="success">{{ importResult.successCount }} 条</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="失败">
+              <el-tag type="danger">{{ importResult.failCount }} 条</el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+          <div v-if="importResult.errors && importResult.errors.length > 0" class="error-list">
+            <p class="error-title">错误详情：</p>
+            <ul>
+              <li v-for="(err, idx) in importResult.errors" :key="idx" class="error-item">{{ err }}</li>
+            </ul>
+          </div>
         </div>
       </div>
+
       <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importLoading" @click="handleImport">确认导入</el-button>
+        <el-button @click="importDialogVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importLoading" @click="submitImport" :disabled="!importFile">
+          开始导入
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -326,7 +365,7 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
-import { Search, Plus, Refresh, EditPen, Delete, Key, Lock, OfficeBuilding, FolderOpened, Document, Upload } from '@element-plus/icons-vue'
+import { Search, Plus, Refresh, EditPen, Delete, Key, Lock, OfficeBuilding, FolderOpened, Document, Upload, Download } from '@element-plus/icons-vue'
 
 // 数据定义
 const loading = ref(false)
@@ -547,59 +586,78 @@ const getDeptName = (deptId: number) => {
   return findName(deptOptions.value, deptId) || '-'
 }
 
-// 批量导入相关
+// ===================== 批量导入相关 =====================
 const importDialogVisible = ref(false)
 const importLoading = ref(false)
-const importText = ref('')
-const importDeptId = ref<number | undefined>(undefined)
+const importFile = ref<File | null>(null)
 const importResult = ref<any>(null)
+const uploadRef = ref()
 
-const showImportDialog = () => {
-  importText.value = ''
-  importDeptId.value = undefined
+const handleImport = () => {
+  importFile.value = null
   importResult.value = null
   importDialogVisible.value = true
 }
 
-const handleImport = async () => {
-  if (!importText.value.trim()) {
-    ElMessage.warning('请输入用户数据')
+const handleFileChange = (file: any) => {
+  importFile.value = file.raw
+}
+
+const handleExceed = () => {
+  ElMessage.warning('只能上传一个文件，请先移除已选文件')
+}
+
+const submitImport = async () => {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择要上传的Excel文件')
     return
   }
-  
-  // 解析文本数据
-  const lines = importText.value.trim().split('\n')
-  const users: any[] = []
-  
-  for (const line of lines) {
-    const parts = line.split(',').map(s => s.trim())
-    if (parts.length >= 2) {
-      users.push({
-        username: parts[0],
-        realName: parts[1],
-        role: parts[2] ? parseInt(parts[2]) : 1,
-        deptId: importDeptId.value
-      })
-    }
-  }
-  
-  if (users.length === 0) {
-    ElMessage.warning('未解析到有效数据')
-    return
-  }
-  
+
   importLoading.value = true
   try {
-    const res: any = await request.post('/admin/user/batch-import', users)
+    const formData = new FormData()
+    formData.append('file', importFile.value)
+    
+    const res: any = await request.post('/admin/user/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    
     importResult.value = res
-    ElMessage.success(res.message || `成功导入 ${res.successCount} 个用户`)
-    fetchData()
-  } catch (error) {
-    console.error(error)
+    ElMessage.success(`导入完成：成功 ${res.successCount} 条，失败 ${res.failCount} 条`)
+    
+    // 刷新用户列表
+    if (res.successCount > 0) {
+      fetchData()
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '导入失败')
   } finally {
     importLoading.value = false
   }
 }
+
+const downloadTemplate = () => {
+  // 使用 xlsx 库生成模板文件
+  const templateData = [
+    ['用户名', '真实姓名', '密码', '角色', '部门/班级', '手机号', '邮箱'],
+    ['zhangsan', '张三', '123456', '学生', '计算机科学与技术1班', '13800138001', 'zhangsan@example.com'],
+    ['lisi', '李四', '', '教师', '计算机学院', '13800138002', 'lisi@example.com']
+  ]
+  
+  // 创建工作簿
+  const worksheet = templateData.map(row => row.join('\t')).join('\n')
+  const blob = new Blob(['\ufeff' + worksheet], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  
+  // 下载文件
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = '用户导入模板.xls'
+  link.click()
+  URL.revokeObjectURL(link.href)
+  
+  ElMessage.success('模板下载成功，请使用Excel打开编辑')
+}
+
 </script>
 
 <style scoped lang="scss">
@@ -744,22 +802,54 @@ const handleImport = async () => {
 }
 
 .mr-1 { margin-right: 4px; }
-.ml-2 { margin-left: 8px; }
-.mb-4 { margin-bottom: 16px; }
 .text-gray { color: #c0c4cc; }
-.text-danger { color: #f56c6c; font-size: 12px; }
 .w-full { width: 100%; }
+.mb-4 { margin-bottom: 16px; }
 
-.import-result {
-  margin-top: 16px;
-  padding: 12px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
+// 批量导入样式
+.import-content {
+  .upload-area {
+    margin-bottom: 16px;
+    
+    :deep(.el-upload-dragger) {
+      padding: 30px 20px;
+    }
+  }
   
-  .error-list {
-    margin-top: 8px;
-    max-height: 150px;
-    overflow-y: auto;
+  .template-download {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  
+  .import-result {
+    margin-top: 16px;
+    
+    .error-list {
+      margin-top: 12px;
+      background: #fef0f0;
+      border-radius: 4px;
+      padding: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      
+      .error-title {
+        color: #f56c6c;
+        font-weight: 500;
+        margin: 0 0 8px 0;
+        font-size: 13px;
+      }
+      
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      
+      .error-item {
+        color: #909399;
+        font-size: 12px;
+        line-height: 1.8;
+      }
+    }
   }
 }
 </style>

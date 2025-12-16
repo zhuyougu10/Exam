@@ -23,7 +23,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import com.alibaba.excel.EasyExcel;
+import com.alibaba.excel.context.AnalysisContext;
+import com.alibaba.excel.read.listener.ReadListener;
+import com.university.exam.dto.UserImportDTO;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -211,69 +217,158 @@ public class SysAdminController {
     }
 
     /**
-     * 批量导入用户
-     * Excel格式：用户名(学号), 姓名, 角色(1-学生/2-教师), 部门ID(可选)
+     * Excel批量导入用户
+     *
+     * @param file Excel文件
+     * @return 导入结果
      */
-    @PostMapping("/user/batch-import")
-    public Result<?> batchImportUsers(@RequestBody List<Map<String, Object>> users) {
-        if (users == null || users.isEmpty()) {
-            throw new BizException(400, "导入数据不能为空");
+    @PostMapping("/user/import")
+    public Result<?> importUsers(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            throw new BizException(400, "请选择要上传的文件");
         }
-        
+
+        String filename = file.getOriginalFilename();
+        if (filename == null || (!filename.endsWith(".xlsx") && !filename.endsWith(".xls"))) {
+            throw new BizException(400, "请上传Excel文件(.xlsx或.xls)");
+        }
+
         Long currentUserId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        LocalDateTime now = LocalDateTime.now();
-        String defaultPassword = passwordEncoder.encode("123456");
         
-        int successCount = 0;
-        int skipCount = 0;
-        List<String> errors = new ArrayList<>();
-        
-        for (int i = 0; i < users.size(); i++) {
-            Map<String, Object> row = users.get(i);
-            try {
-                String username = row.get("username") != null ? row.get("username").toString().trim() : null;
-                String realName = row.get("realName") != null ? row.get("realName").toString().trim() : null;
-                Integer role = row.get("role") != null ? Integer.valueOf(row.get("role").toString()) : 1;
-                Long deptId = row.get("deptId") != null ? Long.valueOf(row.get("deptId").toString()) : null;
-                
-                if (!StringUtils.hasText(username)) {
-                    errors.add("第" + (i + 1) + "行：用户名不能为空");
-                    continue;
-                }
-                
-                // 检查用户名是否已存在
-                User existing = userService.lambdaQuery().eq(User::getUsername, username).one();
-                if (existing != null) {
-                    skipCount++;
-                    continue;
-                }
-                
-                User user = new User();
-                user.setUsername(username);
-                user.setRealName(realName != null ? realName : username);
-                user.setPassword(defaultPassword);
-                user.setRole(role.byteValue());
-                user.setDeptId(deptId);
-                user.setStatus((byte) 1);
-                user.setCreateBy(currentUserId);
-                user.setCreateTime(now);
-                user.setUpdateBy(currentUserId);
-                user.setUpdateTime(now);
-                
-                userService.save(user);
-                successCount++;
-            } catch (Exception e) {
-                errors.add("第" + (i + 1) + "行：" + e.getMessage());
-            }
+        // 预加载部门数据用于名称匹配
+        List<Dept> allDepts = deptService.list();
+        Map<String, Long> deptNameToId = new HashMap<>();
+        for (Dept dept : allDepts) {
+            deptNameToId.put(dept.getDeptName(), dept.getId());
         }
-        
+
+        // 导入统计
+        List<String> errors = new ArrayList<>();
+        int[] successCount = {0};
+        int[] failCount = {0};
+
+        try {
+            EasyExcel.read(file.getInputStream(), UserImportDTO.class, new ReadListener<UserImportDTO>() {
+                private int rowIndex = 1; // 从第2行开始（第1行是表头）
+
+                @Override
+                public void invoke(UserImportDTO data, AnalysisContext context) {
+                    rowIndex++;
+                    try {
+                        // 验证必填字段
+                        if (!StringUtils.hasText(data.getUsername())) {
+                            errors.add("第" + rowIndex + "行：用户名不能为空");
+                            failCount[0]++;
+                            return;
+                        }
+                        if (!StringUtils.hasText(data.getRealName())) {
+                            errors.add("第" + rowIndex + "行：真实姓名不能为空");
+                            failCount[0]++;
+                            return;
+                        }
+
+                        // 检查用户名是否已存在
+                        User existingUser = userService.lambdaQuery()
+                                .eq(User::getUsername, data.getUsername())
+                                .one();
+                        if (existingUser != null) {
+                            errors.add("第" + rowIndex + "行：用户名 " + data.getUsername() + " 已存在");
+                            failCount[0]++;
+                            return;
+                        }
+
+                        // 创建用户
+                        User user = new User();
+                        user.setUsername(data.getUsername());
+                        user.setRealName(data.getRealName());
+                        
+                        // 密码处理：默认123456
+                        String password = StringUtils.hasText(data.getPassword()) ? data.getPassword() : "123456";
+                        user.setPassword(passwordEncoder.encode(password));
+                        
+                        // 角色处理
+                        user.setRole(parseRole(data.getRoleName()));
+                        
+                        // 部门处理
+                        if (StringUtils.hasText(data.getDeptName())) {
+                            Long deptId = deptNameToId.get(data.getDeptName().trim());
+                            if (deptId != null) {
+                                user.setDeptId(deptId);
+                            }
+                        }
+                        
+                        user.setPhone(data.getPhone());
+                        user.setEmail(data.getEmail());
+                        user.setStatus((byte) 1);
+                        user.setCreateBy(currentUserId);
+                        user.setCreateTime(LocalDateTime.now());
+                        user.setUpdateBy(currentUserId);
+                        user.setUpdateTime(LocalDateTime.now());
+
+                        userService.save(user);
+                        successCount[0]++;
+                    } catch (Exception e) {
+                        errors.add("第" + rowIndex + "行：导入失败 - " + e.getMessage());
+                        failCount[0]++;
+                    }
+                }
+
+                @Override
+                public void doAfterAllAnalysed(AnalysisContext context) {
+                    // 读取完成
+                }
+            }).sheet().doRead();
+        } catch (IOException e) {
+            throw new BizException(500, "读取Excel文件失败：" + e.getMessage());
+        }
+
+        // 构建返回结果
         Map<String, Object> result = new HashMap<>();
-        result.put("successCount", successCount);
-        result.put("skipCount", skipCount);
-        result.put("errorCount", errors.size());
-        result.put("errors", errors.size() > 10 ? errors.subList(0, 10) : errors);
-        
-        return Result.success(result, "成功导入 " + successCount + " 个用户，跳过 " + skipCount + " 个已存在用户");
+        result.put("successCount", successCount[0]);
+        result.put("failCount", failCount[0]);
+        result.put("errors", errors.size() > 10 ? errors.subList(0, 10) : errors); // 最多返回10条错误
+
+        String message = String.format("导入完成：成功 %d 条，失败 %d 条", successCount[0], failCount[0]);
+        return Result.success(result, message);
+    }
+
+    /**
+     * 下载用户导入模板
+     */
+    @GetMapping("/user/import/template")
+    public Result<?> getImportTemplate() {
+        // 返回模板说明，前端根据此生成或下载模板
+        Map<String, Object> template = new HashMap<>();
+        template.put("columns", List.of(
+            Map.of("field", "username", "title", "用户名", "required", true, "example", "zhangsan"),
+            Map.of("field", "realName", "title", "真实姓名", "required", true, "example", "张三"),
+            Map.of("field", "password", "title", "密码", "required", false, "example", "123456（默认）"),
+            Map.of("field", "roleName", "title", "角色", "required", false, "example", "学生/教师/管理员"),
+            Map.of("field", "deptName", "title", "部门/班级", "required", false, "example", "计算机科学与技术1班"),
+            Map.of("field", "phone", "title", "手机号", "required", false, "example", "13800138000"),
+            Map.of("field", "email", "title", "邮箱", "required", false, "example", "zhangsan@example.com")
+        ));
+        template.put("tips", List.of(
+            "用户名和真实姓名为必填项",
+            "密码为空时默认设置为 123456",
+            "角色可填：学生、教师、管理员，默认为学生",
+            "部门/班级需填写系统中已存在的部门名称"
+        ));
+        return Result.success(template);
+    }
+
+    /**
+     * 解析角色名称
+     */
+    private byte parseRole(String roleName) {
+        if (!StringUtils.hasText(roleName)) {
+            return 1; // 默认学生
+        }
+        return switch (roleName.trim()) {
+            case "教师" -> 2;
+            case "管理员" -> 3;
+            default -> 1; // 学生
+        };
     }
 
     // ===================== 组织架构 =====================

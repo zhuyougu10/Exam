@@ -5,7 +5,9 @@ import com.university.exam.common.request.LoginRequest;
 import com.university.exam.common.result.Result;
 import com.university.exam.common.utils.JwtUtils;
 import com.university.exam.entity.User;
+import com.university.exam.service.TokenService;
 import com.university.exam.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,6 +40,7 @@ import java.util.Map;
 public class AuthController {
     private final UserService userService;
     private final JwtUtils jwtUtils;
+    private final TokenService tokenService;
     private final BCryptPasswordEncoder passwordEncoder;
 
     /**
@@ -69,8 +73,8 @@ public class AuthController {
             throw new BizException(401, "密码错误");
         }
 
-        // 5. 生成JWT Token
-        String token = jwtUtils.generateToken(
+        // 5. 生成JWT Token并存入Redis
+        String token = tokenService.createToken(
                 user.getId(),
                 user.getRole().intValue(), // Byte转Integer
                 user.getDeptId() // 已经是Long类型
@@ -129,5 +133,29 @@ public class AuthController {
 
         // 5. 返回成功响应
         return Result.success(userInfo, "获取用户信息成功");
+    }
+
+    /**
+     * 用户登出接口
+     * 将Token加入黑名单，使其失效
+     *
+     * @param request HTTP请求
+     * @return 登出结果
+     */
+    @PostMapping("/logout")
+    public Result<?> logout(HttpServletRequest request) {
+        // 1. 从请求头获取Token
+        String authHeader = request.getHeader("Authorization");
+        if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            // 2. 将Token从Redis中删除并加入黑名单
+            tokenService.removeToken(token);
+            log.info("用户登出成功");
+        }
+        
+        // 3. 清除SecurityContext
+        SecurityContextHolder.clearContext();
+        
+        return Result.success(null, "登出成功");
     }
 }
