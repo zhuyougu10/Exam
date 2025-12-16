@@ -170,8 +170,8 @@
                   </div>
                 </div>
 
-                <!-- 简答 / 填空 -->
-                <div v-if="[4, 5].includes(question.type)" class="text-answer">
+                <!-- 简答题 -->
+                <div v-if="question.type === 4" class="text-answer">
                   <textarea
                       v-model="userAnswers[question.id]"
                       rows="6"
@@ -179,6 +179,27 @@
                       @input="handleAnswerChange"
                   ></textarea>
                   <span class="char-count">{{ (userAnswers[question.id] || '').length }} 字符</span>
+                </div>
+
+                <!-- 填空题 -->
+                <div v-if="question.type === 5" class="fill-blank-answer">
+                  <div class="fill-blank-hint">请按顺序填写每个空的答案：</div>
+                  <div class="fill-blank-inputs">
+                    <div 
+                        v-for="(_, blankIndex) in getBlankCount(question.content)" 
+                        :key="blankIndex" 
+                        class="fill-blank-item"
+                    >
+                      <span class="blank-label">第 {{ blankIndex + 1 }} 空：</span>
+                      <input
+                          type="text"
+                          :value="getBlankAnswer(question.id, blankIndex)"
+                          @input="setBlankAnswer(question.id, blankIndex, ($event.target as HTMLInputElement).value)"
+                          placeholder="请输入答案"
+                          class="blank-input"
+                      />
+                    </div>
+                  </div>
                 </div>
 
               </div>
@@ -509,7 +530,61 @@ const submitExam = async (force = false) => {
 
 const formatContent = (content: string) => {
   if(!content) return ''
-  return content.replace(/_{3,}/g, '<span style="border-bottom:1px solid #333; padding:0 10px; display:inline-block; min-width:30px;"></span>').replace(/\n/g, '<br/>')
+  return content.replace(/_{3,}/g, '<span class="blank-placeholder">____</span>').replace(/\n/g, '<br/>')
+}
+
+// 填空题专用：移除所有 ____ 占位符
+const formatFillBlankContent = (content: string) => {
+  if(!content) return ''
+  return content.replace(/_{3,}/g, '').replace(/\n/g, '<br/>')
+}
+
+// ===================== 填空题多空支持 =====================
+
+// 获取题目中空的数量
+const getBlankCount = (content: string): number => {
+  if (!content) return 1
+  const matches = content.match(/_{3,}/g)
+  return matches ? matches.length : 1
+}
+
+// 获取某个空的答案
+const getBlankAnswer = (qid: number, blankIndex: number): string => {
+  const val = userAnswers.value[qid]
+  if (!val) return ''
+  // 如果是字符串，按分号分割
+  if (typeof val === 'string') {
+    const parts = val.split(';')
+    return parts[blankIndex] || ''
+  }
+  return ''
+}
+
+// 设置某个空的答案
+const setBlankAnswer = (qid: number, blankIndex: number, value: string) => {
+  const question = paperData.value.questions.find(q => q.id === qid)
+  if (!question) return
+  
+  const blankCount = getBlankCount(question.content)
+  const currentVal = userAnswers.value[qid] || ''
+  
+  // 将当前值按分号分割成数组
+  let parts: string[] = []
+  if (typeof currentVal === 'string' && currentVal) {
+    parts = currentVal.split(';')
+  }
+  
+  // 确保数组长度足够
+  while (parts.length < blankCount) {
+    parts.push('')
+  }
+  
+  // 更新指定位置的值
+  parts[blankIndex] = value
+  
+  // 重新拼接为字符串
+  userAnswers.value[qid] = parts.join(';')
+  saveProgressToLocal()
 }
 
 // 核心修复：选项解析，处理判断题
@@ -1129,6 +1204,72 @@ onUnmounted(() => {
   font-size: 12px;
   color: #a0aec0;
   pointer-events: none;
+}
+
+/* 填空题多空输入 */
+.fill-blank-answer {
+  background-color: #f8fafc;
+  border: 2px solid #edf2f7;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.fill-blank-hint {
+  font-size: 14px;
+  color: #718096;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.fill-blank-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fill-blank-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.blank-label {
+  font-size: 14px;
+  color: #4a5568;
+  font-weight: 600;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.blank-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #2d3748;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background-color: white;
+}
+
+.blank-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.blank-input::placeholder {
+  color: #a0aec0;
+}
+
+/* 题目中的空位占位符样式 */
+:deep(.blank-placeholder) {
+  display: inline-block;
+  min-width: 80px;
+  border-bottom: 2px solid #4f46e5;
+  margin: 0 4px;
+  color: transparent;
+  font-size: 0;
 }
 
 /* 底部 */
