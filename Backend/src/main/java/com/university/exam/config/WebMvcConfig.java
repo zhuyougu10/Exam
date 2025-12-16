@@ -1,8 +1,10 @@
 package com.university.exam.config;
 
 import com.university.exam.common.interceptor.LogInterceptor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -16,6 +18,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
     private final LogInterceptor logInterceptor;
+
+    @Value("${file.upload-dir:uploads}")
+    private String uploadDir;
 
     /**
      * 构造方法
@@ -35,6 +40,20 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         // 注册操作日志拦截器，设置拦截路径为/**（所有请求）
         registry.addInterceptor(logInterceptor)
-                .addPathPatterns("/**");
+                .addPathPatterns("/**")
+                .excludePathPatterns("/uploads/**");
+    }
+
+    /**
+     * 配置静态资源处理
+     *
+     * @param registry 资源处理注册表
+     */
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // 配置上传文件的访问路径（使用绝对路径，与FileController一致）
+        String absolutePath = System.getProperty("user.dir") + "/" + uploadDir + "/";
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + absolutePath);
     }
 }

@@ -80,6 +80,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/ws/**").permitAll()
+                        .requestMatchers("/uploads/**").permitAll()
                         // 其他所有请求需通过身份认证
                         .anyRequest().authenticated()
                 )

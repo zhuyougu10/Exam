@@ -55,12 +55,26 @@
               <div class="py-4 pr-12">
                 <el-form ref="infoFormRef" :model="infoForm" :rules="infoRules" label-width="100px">
                   <el-form-item label="用户头像">
-                    <div class="flex items-center gap-4">
-                      <el-avatar :size="60" :src="infoForm.avatar" />
-                      <!-- 这里简化处理，实际可以使用上传组件 -->
-                      <el-input v-model="infoForm.avatar" placeholder="请输入头像 URL 链接" class="w-full">
-                        <template #prepend>HTTPS</template>
-                      </el-input>
+                    <div class="avatar-upload-wrapper">
+                      <el-upload
+                          class="avatar-uploader"
+                          action="/api/file/upload/image"
+                          :headers="uploadHeaders"
+                          :show-file-list="false"
+                          :on-success="handleAvatarSuccess"
+                          :before-upload="beforeAvatarUpload"
+                          accept="image/*"
+                      >
+                        <div class="avatar-upload-box">
+                          <el-avatar :size="80" :src="infoForm.avatar">
+                            {{ infoForm.realName?.charAt(0) }}
+                          </el-avatar>
+                          <div class="avatar-mask">
+                            <el-icon><Plus /></el-icon>
+                          </div>
+                        </div>
+                      </el-upload>
+                      <div class="avatar-tip">点击头像上传新图片</div>
                     </div>
                   </el-form-item>
                   <el-form-item label="真实姓名">
@@ -125,9 +139,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Message, Phone, Calendar, User, Lock } from '@element-plus/icons-vue'
+import { Message, Phone, Calendar, User, Lock, Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useUserStore } from '@/store/user'
 
@@ -135,6 +149,12 @@ const userStore = useUserStore()
 const activeTab = ref('info')
 const loading = ref(false)
 const pwdLoading = ref(false)
+
+// 上传请求头（携带Token）
+const uploadHeaders = computed(() => {
+  const token = localStorage.getItem('token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+})
 
 // 用户信息
 const userInfo = ref<any>({})
@@ -261,6 +281,31 @@ const getRoleType = (role: number) => {
   return map[role] || 'info'
 }
 
+// 头像上传成功回调
+const handleAvatarSuccess = (response: any) => {
+  if (response.code === 200 && response.data?.url) {
+    infoForm.avatar = response.data.url
+    ElMessage.success('头像上传成功')
+  } else {
+    ElMessage.error(response.message || '上传失败')
+  }
+}
+
+// 头像上传前校验
+const beforeAvatarUpload = (file: File) => {
+  const isImage = file.type.startsWith('image/')
+  const isLt2M = file.size / 1024 / 1024 < 2
+  if (!isImage) {
+    ElMessage.error('只能上传图片文件')
+    return false
+  }
+  if (!isLt2M) {
+    ElMessage.error('头像大小不能超过2MB')
+    return false
+  }
+  return true
+}
+
 onMounted(() => {
   getProfile()
 })
@@ -296,5 +341,49 @@ onMounted(() => {
     height: 1px;
     background-color: #f0f2f5;
   }
+}
+
+/* 头像上传样式 */
+.avatar-upload-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.avatar-uploader {
+  cursor: pointer;
+}
+
+.avatar-upload-box {
+  position: relative;
+  display: inline-block;
+  border-radius: 50%;
+  overflow: hidden;
+  
+  &:hover .avatar-mask {
+    opacity: 1;
+  }
+}
+
+.avatar-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.3s;
+  font-size: 24px;
+}
+
+.avatar-tip {
+  font-size: 12px;
+  color: #909399;
 }
 </style>

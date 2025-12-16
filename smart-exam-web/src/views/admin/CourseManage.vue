@@ -3,7 +3,6 @@
     <!-- 顶部操作栏 -->
     <el-card shadow="never" class="filter-card">
       <div class="header-box">
-        <!-- 左侧筛选区：使用 el-form inline 模式，保证在一行 -->
         <div class="header-left">
           <el-form :inline="true" :model="queryParams" class="filter-form">
             <el-form-item label="课程搜索" class="form-item-no-margin">
@@ -18,7 +17,6 @@
               />
             </el-form-item>
             <el-form-item label="所属院系" class="form-item-no-margin">
-              <!-- 修复点1：添加 value: 'id' 配置 -->
               <el-tree-select
                   v-model="queryParams.deptId"
                   :data="deptOptions"
@@ -36,8 +34,6 @@
             </el-form-item>
           </el-form>
         </div>
-
-        <!-- 右侧操作区 -->
         <div class="header-right">
           <el-button type="success" icon="Plus" @click="handleAdd">新建课程</el-button>
         </div>
@@ -54,7 +50,6 @@
           stripe
       >
         <el-table-column type="index" label="#" width="60" align="center" />
-
         <el-table-column label="课程信息" min-width="260">
           <template #default="{ row }">
             <div class="course-info">
@@ -79,13 +74,11 @@
             </div>
           </template>
         </el-table-column>
-
         <el-table-column prop="credits" label="学分" width="80" align="center">
           <template #default="{ row }">
             <el-tag effect="plain" type="info">{{ row.credits }}</el-tag>
           </template>
         </el-table-column>
-
         <el-table-column label="授课教师" width="100" align="center">
           <template #default="{ row }">
             <el-button link type="primary" @click="openMemberDrawer(row, 2)">
@@ -93,7 +86,6 @@
             </el-button>
           </template>
         </el-table-column>
-
         <el-table-column label="选课学生" width="100" align="center">
           <template #default="{ row }">
             <el-button link type="success" @click="openMemberDrawer(row, 1)">
@@ -101,7 +93,6 @@
             </el-button>
           </template>
         </el-table-column>
-
         <el-table-column label="所属院系" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="dept-text">
@@ -110,7 +101,6 @@
             </span>
           </template>
         </el-table-column>
-
         <el-table-column prop="status" label="状态" width="120" align="center">
           <template #default="{ row }">
             <el-switch
@@ -124,13 +114,11 @@
             />
           </template>
         </el-table-column>
-
         <el-table-column label="创建时间" prop="createTime" width="160" align="center">
           <template #default="{ row }">
             <span class="time-text">{{ formatTime(row.createTime) }}</span>
           </template>
         </el-table-column>
-
         <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link icon="Edit" @click="handleEdit(row)">编辑</el-button>
@@ -143,8 +131,6 @@
           </template>
         </el-table-column>
       </el-table>
-
-      <!-- 分页组件 (Fixed) -->
       <div class="pagination-box">
         <el-pagination
             v-model:current-page="queryParams.page"
@@ -181,11 +167,9 @@
             </el-form-item>
           </el-col>
         </el-row>
-
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="所属院系" prop="deptId">
-              <!-- 修复点2：添加 value: 'id' 配置 -->
               <el-tree-select
                   v-model="form.deptId"
                   :data="deptOptions"
@@ -202,16 +186,34 @@
             </el-form-item>
           </el-col>
         </el-row>
-
         <el-form-item label="封面图片" prop="coverImg">
-          <el-input v-model="form.coverImg" placeholder="输入图片 URL 地址">
-            <template #prefix><el-icon><Link /></el-icon></template>
-          </el-input>
-          <div v-if="form.coverImg" class="preview-box">
-            <img :src="form.coverImg" class="preview-img" alt="预览" />
+          <div class="cover-upload-wrapper">
+            <el-upload
+                class="cover-uploader"
+                action="/api/file/upload/image"
+                :headers="uploadHeaders"
+                :show-file-list="false"
+                :on-success="handleUploadSuccess"
+                :before-upload="beforeUpload"
+                accept="image/*"
+            >
+              <div v-if="form.coverImg" class="upload-preview">
+                <img :src="form.coverImg" class="preview-img" alt="预览" />
+                <div class="preview-mask">
+                  <el-icon><Plus /></el-icon>
+                  <span>更换封面</span>
+                </div>
+              </div>
+              <div v-else class="upload-placeholder">
+                <el-icon class="upload-icon"><Plus /></el-icon>
+                <span>点击上传封面</span>
+              </div>
+            </el-upload>
+            <el-input v-model="form.coverImg" placeholder="或输入图片URL" clearable class="url-input">
+              <template #prefix><el-icon><Link /></el-icon></template>
+            </el-input>
           </div>
         </el-form-item>
-
         <el-form-item label="课程简介" prop="description">
           <el-input
               v-model="form.description"
@@ -221,7 +223,6 @@
               resize="none"
           />
         </el-form-item>
-
         <el-form-item label="初始状态">
           <el-radio-group v-model="form.status">
             <el-radio :value="1">立即启用</el-radio>
@@ -247,12 +248,23 @@
       <div class="member-drawer-content">
         <!-- 添加成员区域 -->
         <div class="add-member-section">
+          <el-tree-select
+              v-if="memberDrawer.role === 2"
+              v-model="memberDrawer.filterDeptId"
+              :data="deptOptions"
+              :props="{ label: 'deptName', value: 'id', children: 'children' }"
+              placeholder="按部门筛选"
+              clearable
+              check-strictly
+              class="dept-filter-select"
+              @change="handleDeptFilterChange"
+          />
           <el-select
               v-model="memberDrawer.selectedUserId"
               filterable
-              remote
+              :remote="memberDrawer.role !== 2 || !memberDrawer.filterDeptId"
               reserve-keyword
-              placeholder="输入用户名或姓名搜索"
+              :placeholder="memberDrawer.role === 2 ? (memberDrawer.filterDeptId ? '从列表选择教师' : '先选择部门或搜索') : '输入用户名或姓名搜索'"
               :remote-method="searchUsers"
               :loading="memberDrawer.searchLoading"
               class="user-select"
@@ -262,13 +274,17 @@
                 :key="user.id"
                 :label="`${user.realName} (${user.username})`"
                 :value="user.id"
-            />
+            >
+              <div class="user-option">
+                <span class="user-option-name">{{ user.realName }}</span>
+                <span class="user-option-username">{{ user.username }}</span>
+              </div>
+            </el-option>
           </el-select>
           <el-button type="primary" @click="handleAddMember" :disabled="!memberDrawer.selectedUserId">
             添加
           </el-button>
         </div>
-
         <!-- 批量导入班级（仅学生） -->
         <div v-if="memberDrawer.role === 1" class="import-dept-section">
           <el-tree-select
@@ -283,7 +299,6 @@
             批量导入
           </el-button>
         </div>
-
         <!-- 成员列表 -->
         <el-table :data="memberDrawer.members" v-loading="memberDrawer.loading" class="member-table">
           <el-table-column label="用户信息" min-width="180">
@@ -312,7 +327,6 @@
             </template>
           </el-table-column>
         </el-table>
-
         <el-empty v-if="memberDrawer.members.length === 0 && !memberDrawer.loading" description="暂无成员" />
       </div>
     </el-drawer>
@@ -320,10 +334,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Plus, Picture, Link, School, Edit, Delete, Refresh, User } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+
+// 上传请求头（携带Token）
+const uploadHeaders = computed(() => {
+  const token = localStorage.getItem('token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+})
 
 // 数据定义
 const loading = ref(false)
@@ -347,7 +367,8 @@ const memberDrawer = reactive({
   selectedUserId: undefined as number | undefined,
   userOptions: [] as any[],
   searchLoading: false,
-  importDeptId: undefined as number | undefined
+  importDeptId: undefined as number | undefined,
+  filterDeptId: undefined as number | undefined
 })
 
 const queryParams = reactive({
@@ -615,6 +636,61 @@ const handleRemoveMember = async (row: any) => {
     // handled
   }
 }
+
+// ===================== 封面上传 =====================
+
+// 上传成功回调
+const handleUploadSuccess = (response: any) => {
+  if (response.code === 200 && response.data?.url) {
+    form.coverImg = response.data.url
+    ElMessage.success('封面上传成功')
+  } else {
+    ElMessage.error(response.message || '上传失败')
+  }
+}
+
+// 上传前校验
+const beforeUpload = (file: File) => {
+  const isImage = file.type.startsWith('image/')
+  const isLt5M = file.size / 1024 / 1024 < 5
+  if (!isImage) {
+    ElMessage.error('只能上传图片文件')
+    return false
+  }
+  if (!isLt5M) {
+    ElMessage.error('图片大小不能超过5MB')
+    return false
+  }
+  return true
+}
+
+// ===================== 教师按部门筛选 =====================
+
+// 部门筛选变化
+const handleDeptFilterChange = async () => {
+  memberDrawer.selectedUserId = undefined
+  if (!memberDrawer.filterDeptId) {
+    memberDrawer.userOptions = []
+    return
+  }
+  memberDrawer.searchLoading = true
+  try {
+    const res: any = await request.get('/admin/user/list', {
+      params: {
+        deptId: memberDrawer.filterDeptId,
+        role: 2,
+        size: 50
+      }
+    })
+    const existingIds = memberDrawer.members.map((m: any) => m.userId)
+    memberDrawer.userOptions = (res.records || []).filter((u: any) => !existingIds.includes(u.id))
+  } catch (error) {
+    console.error(error)
+  } finally {
+    memberDrawer.searchLoading = false
+  }
+}
+
 </script>
 
 <style scoped>
@@ -788,6 +864,103 @@ const handleRemoveMember = async (row: any) => {
 }
 
 .username {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 封面上传样式 */
+.cover-upload-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.cover-uploader {
+  width: 120px;
+  height: 120px;
+}
+
+.upload-preview,
+.upload-placeholder {
+  width: 120px;
+  height: 120px;
+  border: 1px dashed #dcdfe6;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+
+.upload-preview:hover,
+.upload-placeholder:hover {
+  border-color: #409eff;
+}
+
+.upload-preview .preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.upload-preview:hover .preview-mask {
+  opacity: 1;
+}
+
+.upload-placeholder {
+  background: #fafafa;
+  color: #8c939d;
+}
+
+.upload-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.url-input {
+  width: 100%;
+}
+
+.dept-filter-select {
+  width: 140px;
+  flex-shrink: 0;
+}
+
+/* 用户选项样式 */
+.user-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.user-option-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.user-option-username {
   font-size: 12px;
   color: #909399;
 }
