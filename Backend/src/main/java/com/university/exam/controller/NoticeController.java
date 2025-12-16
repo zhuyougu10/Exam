@@ -279,6 +279,11 @@ public class NoticeController {
     @DeleteMapping("/{noticeId}")
     @PreAuthorize("hasRole(3)")
     public Result<Map<String, Object>> deleteNotice(@PathVariable Long noticeId) {
+        // 先删除用户通知状态关联
+        userNoticeService.remove(new LambdaQueryWrapper<UserNotice>()
+                .eq(UserNotice::getNoticeId, noticeId));
+        
+        // 再删除通知本身
         noticeService.removeById(noticeId);
         
         Map<String, Object> result = new HashMap<>();

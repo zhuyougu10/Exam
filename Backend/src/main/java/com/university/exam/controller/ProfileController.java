@@ -81,8 +81,7 @@ public class ProfileController {
             throw new BizException(404, "用户不存在");
         }
 
-        // 更新字段
-        if (req.getRealName() != null) user.setRealName(req.getRealName());
+        // 更新字段（真实姓名不允许用户自行修改）
         if (req.getEmail() != null) user.setEmail(req.getEmail());
         if (req.getPhone() != null) user.setPhone(req.getPhone());
         if (req.getAvatar() != null) user.setAvatar(req.getAvatar());

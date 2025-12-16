@@ -63,8 +63,8 @@
                       </el-input>
                     </div>
                   </el-form-item>
-                  <el-form-item label="真实姓名" prop="realName">
-                    <el-input v-model="infoForm.realName" placeholder="请输入您的真实姓名" />
+                  <el-form-item label="真实姓名">
+                    <el-input v-model="infoForm.realName" disabled />
                   </el-form-item>
                   <el-form-item label="手机号码" prop="phone">
                     <el-input v-model="infoForm.phone" placeholder="请输入手机号码" maxlength="11" />
@@ -160,7 +160,6 @@ const pwdForm = reactive({
 
 // 校验规则
 const infoRules = {
-  realName: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
   email: [{ type: 'email', message: '请输入正确的邮箱地址', trigger: ['blur', 'change'] }],
   phone: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }]
 }

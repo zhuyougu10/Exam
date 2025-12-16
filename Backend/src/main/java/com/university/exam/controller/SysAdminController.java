@@ -10,11 +10,25 @@ import com.university.exam.entity.Course;
 import com.university.exam.entity.Dept;
 import com.university.exam.entity.User;
 import com.university.exam.entity.CourseUser;
+import com.university.exam.entity.MistakeBook;
+import com.university.exam.entity.RecordDetail;
 import com.university.exam.service.ConfigService;
 import com.university.exam.service.CourseService;
 import com.university.exam.service.CourseUserService;
 import com.university.exam.service.DeptService;
+import com.university.exam.service.MistakeBookService;
+import com.university.exam.service.RecordDetailService;
+import com.university.exam.service.RecordService;
 import com.university.exam.service.UserService;
+import com.university.exam.service.UserNoticeService;
+import com.university.exam.service.ProctorLogService;
+import com.university.exam.service.PaperService;
+import com.university.exam.service.QuestionService;
+import com.university.exam.entity.Record;
+import com.university.exam.entity.UserNotice;
+import com.university.exam.entity.ProctorLog;
+import com.university.exam.entity.Paper;
+import com.university.exam.entity.Question;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +70,13 @@ public class SysAdminController {
     private final CourseService courseService;
     private final CourseUserService courseUserService;
     private final ConfigService configService;
+    private final RecordService recordService;
+    private final RecordDetailService recordDetailService;
+    private final MistakeBookService mistakeBookService;
+    private final UserNoticeService userNoticeService;
+    private final ProctorLogService proctorLogService;
+    private final PaperService paperService;
+    private final QuestionService questionService;
     private final BCryptPasswordEncoder passwordEncoder;
 
     // ===================== 用户管理 =====================
@@ -161,8 +182,38 @@ public class SysAdminController {
             throw new BizException(404, "用户不存在");
         }
 
-        // 2. 处理关联数据（这里简化处理，实际项目中可能需要处理更多关联）
-        // TODO: 处理用户相关的关联数据，如考试记录、错题本等
+        // 2. 处理关联数据
+        // 2.1 删除用户的错题本记录
+        mistakeBookService.remove(new LambdaQueryWrapper<MistakeBook>()
+                .eq(MistakeBook::getUserId, id));
+
+        // 2.2 删除用户的考试记录明细（先获取用户的所有考试记录ID）
+        List<Record> userRecords = recordService.list(new LambdaQueryWrapper<Record>()
+                .eq(Record::getUserId, id));
+        if (!userRecords.isEmpty()) {
+            List<Long> recordIds = userRecords.stream().map(Record::getId).toList();
+            recordDetailService.remove(new LambdaQueryWrapper<RecordDetail>()
+                    .in(RecordDetail::getRecordId, recordIds));
+        }
+
+        // 2.3 删除用户的考试记录
+        recordService.remove(new LambdaQueryWrapper<Record>()
+                .eq(Record::getUserId, id));
+
+        // 2.4 删除用户的监考日志
+        if (!userRecords.isEmpty()) {
+            List<Long> recordIds = userRecords.stream().map(Record::getId).toList();
+            proctorLogService.remove(new LambdaQueryWrapper<ProctorLog>()
+                    .in(ProctorLog::getRecordId, recordIds));
+        }
+
+        // 2.5 删除用户的消息通知状态
+        userNoticeService.remove(new LambdaQueryWrapper<UserNotice>()
+                .eq(UserNotice::getUserId, id));
+
+        // 2.6 删除用户的课程关联
+        courseUserService.remove(new LambdaQueryWrapper<CourseUser>()
+                .eq(CourseUser::getUserId, id));
 
         // 3. 删除用户
         userService.removeById(id);
@@ -639,13 +690,25 @@ public class SysAdminController {
             throw new BizException(404, "课程不存在");
         }
 
-        // 2. (可选) 检查是否有学生选课，如有则禁止删除
-        // long studentCount = courseUserService.lambdaQuery().eq(CourseUser::getCourseId, id).count();
-        // if (studentCount > 0) {
-        //     throw new BizException(400, "该课程已有学生选修，无法删除");
-        // }
+        // 2. 检查是否有关联试卷
+        long paperCount = paperService.count(new LambdaQueryWrapper<Paper>()
+                .eq(Paper::getCourseId, id));
+        if (paperCount > 0) {
+            throw new BizException(400, "该课程下存在试卷，无法删除");
+        }
 
-        // 3. 删除
+        // 3. 检查是否有关联题目
+        long questionCount = questionService.count(new LambdaQueryWrapper<Question>()
+                .eq(Question::getCourseId, id));
+        if (questionCount > 0) {
+            throw new BizException(400, "该课程下存在题目，无法删除");
+        }
+
+        // 4. 删除课程用户关联
+        courseUserService.remove(new LambdaQueryWrapper<CourseUser>()
+                .eq(CourseUser::getCourseId, id));
+
+        // 5. 删除课程
         courseService.removeById(id);
 
         return Result.success("课程删除成功");

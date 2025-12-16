@@ -160,6 +160,13 @@ public class ExamPublishController {
             throw new BizException(403, "无权操作");
         }
 
+        // 检查是否有考试记录
+        long recordCount = recordService.count(new LambdaQueryWrapper<Record>()
+                .eq(Record::getPublishId, id));
+        if (recordCount > 0) {
+            throw new BizException(400, "该考试已有学生参加，无法删除");
+        }
+
         // 逻辑删除
         publish.setUpdateBy(userId);
         publish.setUpdateTime(LocalDateTime.now());

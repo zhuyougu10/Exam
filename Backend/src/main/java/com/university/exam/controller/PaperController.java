@@ -7,8 +7,10 @@ import com.university.exam.common.exception.BizException;
 import com.university.exam.common.result.Result;
 import com.university.exam.entity.CourseUser;
 import com.university.exam.entity.Paper;
+import com.university.exam.entity.PaperQuestion;
 import com.university.exam.service.CourseUserService;
 import com.university.exam.service.PaperService;
+import com.university.exam.service.PaperQuestionService;
 import com.university.exam.service.PublishService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,7 @@ public class PaperController {
     private final PaperService paperService;
     private final PublishService publishService;
     private final CourseUserService courseUserService;
+    private final PaperQuestionService paperQuestionService;
 
     /**
      * 智能/随机组卷
@@ -121,7 +124,11 @@ public class PaperController {
             throw new BizException(403, "无权删除非本人创建的试卷");
         }
 
-        // 逻辑删除
+        // 删除试卷题目关联
+        paperQuestionService.remove(new LambdaQueryWrapper<PaperQuestion>()
+                .eq(PaperQuestion::getPaperId, id));
+
+        // 逻辑删除试卷
         paper.setUpdateBy(userId);
         paper.setUpdateTime(LocalDateTime.now());
         paperService.removeById(id);

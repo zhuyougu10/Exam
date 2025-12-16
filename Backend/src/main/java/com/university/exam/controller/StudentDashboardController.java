@@ -19,8 +19,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -70,10 +72,26 @@ public class StudentDashboardController {
             vo.setAvgScore(0.0);
         }
         
-        // 4. 即将开始的考试 (简单逻辑：查询Publish中尚未结束的，且该学生尚未提交的)
-        // 这里简化为：查询当前时间在 start_time 和 end_time 之间的
-        // 实际应结合 CourseUser 判断权限，此处简化
-        vo.setUpcomingCount(0); // 暂不实现复杂逻辑
+        // 4. 即将开始的考试：查询尚未结束且学生未完成的考试数量
+        LocalDateTime now = LocalDateTime.now();
+        // 查询所有尚未结束且已启用的考试
+        List<Publish> activePublishes = publishService.list(new LambdaQueryWrapper<Publish>()
+                .eq(Publish::getStatus, 1)
+                .gt(Publish::getEndTime, now));
+        
+        // 获取该学生已完成的考试发布ID集合
+        Set<Long> completedPublishIds = recordService.list(new LambdaQueryWrapper<Record>()
+                .eq(Record::getUserId, userId)
+                .ge(Record::getStatus, 2))
+                .stream()
+                .map(Record::getPublishId)
+                .collect(Collectors.toSet());
+        
+        // 计算未完成的考试数量
+        long upcomingCount = activePublishes.stream()
+                .filter(p -> !completedPublishIds.contains(p.getId()))
+                .count();
+        vo.setUpcomingCount((int) upcomingCount);
 
         return Result.success(vo);
     }
