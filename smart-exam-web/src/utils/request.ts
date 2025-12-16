@@ -1,7 +1,8 @@
 import axios from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import router from '@/router'
+import { isTokenExpired, getTokenRemainingTime } from './token'
 
 // 自定义 Axios 实例类型
 interface CustomAxiosInstance extends AxiosInstance {
@@ -21,14 +22,44 @@ const service: CustomAxiosInstance = axios.create({
   }
 }) as CustomAxiosInstance
 
+// 是否正在显示过期提示（避免重复弹窗）
+let isShowingExpireDialog = false
+
 // 请求拦截器
 service.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
       // 从 localStorage 获取 token
       const token = localStorage.getItem('token')
+      
       if (token) {
-        // 添加 Authorization 头
+        // 检查Token是否已过期（提前60秒判定）
+        if (isTokenExpired(token, 60)) {
+          // Token已过期，清除并跳转登录
+          localStorage.removeItem('token')
+          
+          if (!isShowingExpireDialog && router.currentRoute.value.path !== '/login') {
+            isShowingExpireDialog = true
+            ElMessageBox.alert('登录已过期，请重新登录', '提示', {
+              confirmButtonText: '确定',
+              type: 'warning',
+              callback: () => {
+                isShowingExpireDialog = false
+                window.location.href = '/login'
+              }
+            })
+          }
+          
+          return Promise.reject(new Error('Token已过期'))
+        }
+        
+        // Token未过期，添加 Authorization 头
         config.headers.Authorization = `Bearer ${token}`
+        
+        // 如果Token即将过期（5分钟内），打印警告日志
+        const remaining = getTokenRemainingTime(token)
+        if (remaining > 0 && remaining < 300) {
+          console.warn(`Token将在 ${remaining} 秒后过期`)
+        }
       }
       return config
     },

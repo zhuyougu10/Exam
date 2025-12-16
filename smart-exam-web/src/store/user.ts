@@ -110,19 +110,30 @@ export const useUserStore = defineStore('user', () => {
 
   /**
    * 用户登出
+   * 调用后端接口使Token失效，然后清除本地状态
    */
-  const logout = () => {
-    // 清除 token
-    token.value = null
-    localStorage.removeItem('token')
-    
-    // 重置状态
-    userInfo.value = null
-    roles.value = []
-    
-    // 直接使用 href 跳转，触发浏览器刷新
-    // 既解决了权限残留问题，又避免了 router.push + reload 导致的双重闪烁
-    window.location.href = '/login'
+  const logout = async () => {
+    try {
+      // 调用后端登出接口，将Token加入黑名单
+      if (token.value) {
+        await request.post('/auth/logout')
+      }
+    } catch (error) {
+      // 即使后端调用失败，也继续清除本地状态
+      console.warn('Logout API failed:', error)
+    } finally {
+      // 清除 token
+      token.value = null
+      localStorage.removeItem('token')
+      
+      // 重置状态
+      userInfo.value = null
+      roles.value = []
+      
+      // 直接使用 href 跳转，触发浏览器刷新
+      // 既解决了权限残留问题，又避免了 router.push + reload 导致的双重闪烁
+      window.location.href = '/login'
+    }
   }
 
   /**
