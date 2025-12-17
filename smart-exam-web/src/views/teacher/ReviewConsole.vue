@@ -136,6 +136,12 @@
                 <div class="qc-body">
                   <div class="q-text" v-html="formatContent(q.content)"></div>
 
+                  <!-- 参考答案 -->
+                  <div class="reference-answer">
+                    <div class="ra-label">参考答案</div>
+                    <div class="ra-content">{{ q.correctAnswer || '（无参考答案）' }}</div>
+                  </div>
+
                   <!-- 学生答案 -->
                   <div class="student-answer">
                     <div class="sa-label">考生作答</div>
@@ -267,6 +273,7 @@ interface ReviewQuestionDetail {
   content: string
   maxScore: number
   studentAnswer: string
+  correctAnswer: string // 参考答案
   score: number // 当前得分
   aiComment: string
   isMarked: number
@@ -692,6 +699,16 @@ onMounted(() => {
 
 .qc-body { padding: 24px; }
 .q-text { font-size: 15px; color: #1f2937; margin-bottom: 20px; line-height: 1.6; }
+
+.reference-answer {
+  background-color: #f0fdf4;
+  border-radius: 6px;
+  padding: 16px;
+  border: 1px solid #bbf7d0;
+  margin-bottom: 12px;
+}
+.ra-label { font-size: 12px; color: #15803d; margin-bottom: 8px; font-weight: 600; }
+.ra-content { font-size: 15px; color: #166534; white-space: pre-wrap; }
 
 .student-answer {
   background-color: #f9fafb;

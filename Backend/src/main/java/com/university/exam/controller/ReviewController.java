@@ -272,6 +272,7 @@ public class ReviewController {
             item.put("content", q.getContent());
             item.put("options", q.getOptions());
             item.put("standardAnswer", q.getAnswer());
+            item.put("correctAnswer", q.getAnswer());
             item.put("analysis", q.getAnalysis());
             item.put("maxScore", detail.getMaxScore());
             
